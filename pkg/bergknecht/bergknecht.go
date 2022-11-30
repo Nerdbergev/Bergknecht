@@ -3,17 +3,21 @@ package bergknecht
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/Nerdbergev/Bergknecht/pkg/config"
 	"github.com/Nerdbergev/Bergknecht/pkg/eventhandler"
+	"github.com/Nerdbergev/Bergknecht/pkg/handlers/echoHandler"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 )
 
 var handler []eventhandler.BergEventHandler
+var startup time.Time
 
 func init() {
-	//handler = append(handler, )
+	handler = append(handler, echoHandler.Handle)
+	startup = time.Now()
 }
 
 func doLogin(conf config.Config) (*mautrix.Client, error) {
@@ -72,7 +76,7 @@ func RunBot(conf config.Config) error {
 
 	syncer := client.Syncer.(*mautrix.DefaultSyncer)
 	syncer.OnEvent(func(source mautrix.EventSource, evt *event.Event) {
-		if isinRoomList(evt.RoomID.String(), conf.Rooms) {
+		if (evt.Sender != client.UserID) && (isinRoomList(evt.RoomID.String(), conf.Rooms) && (evt.Timestamp >= startup.UnixMilli())) {
 			for _, h := range handler {
 				handled := h(client, source, evt)
 				if handled {
