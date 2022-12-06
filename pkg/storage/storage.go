@@ -12,14 +12,14 @@ type Manager struct {
 }
 
 type Config struct {
-	CachedPath    string
-	PersistenPath string
+	CachedPath     string
+	PersistentPath string
 }
 
 func CreateStorageManager(c Config) *Manager {
 	res := new(Manager)
 	res.cachedPath = filepath.Join(c.CachedPath, "cached")
-	res.peristentPath = filepath.Join(c.PersistenPath, "persistent")
+	res.peristentPath = filepath.Join(c.PersistentPath, "persistent")
 	return res
 }
 

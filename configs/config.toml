@@ -1,0 +1,17 @@
+[Serversettings]
+Homserver="https://matrix.org"
+Username="BotName"
+Password=""
+Rooms = [
+  ""
+]
+
+[LoggerSettings]
+Level = "debug"
+Encoding = "json"
+OutputPaths = ["stdout", "/tmp/Bergknecht/log"]
+ErrorOutputPaths = ["stderr"]
+
+[StorageSettings]
+CachedPath = "/tmp/Bergknecht/cached"
+PersistentPath = "/etc/Bergknecht/storage"
