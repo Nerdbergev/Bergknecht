@@ -8,6 +8,7 @@ import (
 	"github.com/Nerdbergev/Bergknecht/pkg/config"
 	"github.com/Nerdbergev/Bergknecht/pkg/eventhandler"
 	"github.com/Nerdbergev/Bergknecht/pkg/handlers/echoHandler"
+	"github.com/Nerdbergev/Bergknecht/pkg/storage"
 	"go.uber.org/zap"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
@@ -79,11 +80,16 @@ func RunBot(conf config.Config) error {
 		return errors.New("Error joining in: " + err.Error())
 	}
 
+	sm := storage.CreateStorageManager(conf.StorageSettings)
+	defer sm.DeleteCache()
+
+	he := eventhandler.HandlerEssentials{Client: client, Logger: sugar, Storage: sm}
+
 	syncer := client.Syncer.(*mautrix.DefaultSyncer)
 	syncer.OnEvent(func(source mautrix.EventSource, evt *event.Event) {
 		if (evt.Sender != client.UserID) && (isinRoomList(evt.RoomID.String(), conf.Serversettings.Rooms) && (evt.Timestamp >= startup.UnixMilli())) {
 			for _, h := range handlers {
-				handled := h(client, sugar, source, evt)
+				handled := h(he, source, evt)
 				if handled {
 					break
 				}

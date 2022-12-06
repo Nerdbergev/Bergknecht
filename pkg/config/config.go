@@ -4,13 +4,15 @@ import (
 	"errors"
 	"os"
 
+	"github.com/Nerdbergev/Bergknecht/pkg/storage"
 	"github.com/pelletier/go-toml"
 	"go.uber.org/zap"
 )
 
 type Config struct {
-	Serversettings serverSettings
-	LoggerSettings zap.Config
+	Serversettings  serverSettings
+	LoggerSettings  zap.Config
+	StorageSettings storage.Config
 }
 
 type serverSettings struct {
