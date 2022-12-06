@@ -5,9 +5,15 @@ import (
 	"os"
 
 	"github.com/pelletier/go-toml"
+	"go.uber.org/zap"
 )
 
 type Config struct {
+	Serversettings serverSettings
+	LoggerSettings zap.Config
+}
+
+type serverSettings struct {
 	Homserver string
 	Username  string
 	Password  string

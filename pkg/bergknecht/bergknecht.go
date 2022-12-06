@@ -8,31 +8,32 @@ import (
 	"github.com/Nerdbergev/Bergknecht/pkg/config"
 	"github.com/Nerdbergev/Bergknecht/pkg/eventhandler"
 	"github.com/Nerdbergev/Bergknecht/pkg/handlers/echoHandler"
+	"go.uber.org/zap"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 )
 
-var handler []eventhandler.BergEventHandler
+var handlers []eventhandler.BergEventHandleFunction
 var startup time.Time
 
 func init() {
-	handler = append(handler, echoHandler.Handle)
+	handlers = append(handlers, echoHandler.Handle)
 	startup = time.Now()
 }
 
 func doLogin(conf config.Config) (*mautrix.Client, error) {
-	client, err := mautrix.NewClient(conf.Homserver, "", "")
+	client, err := mautrix.NewClient(conf.Serversettings.Homserver, "", "")
 	if err != nil {
 		return nil, errors.New("Error creating Client: " + err.Error())
 	}
 
 	var ident mautrix.UserIdentifier
-	ident.User = conf.Username
+	ident.User = conf.Serversettings.Username
 	ident.Type = "m.id.user"
 
 	var reqLog mautrix.ReqLogin
 	reqLog.Identifier = ident
-	reqLog.Password = conf.Password
+	reqLog.Password = conf.Serversettings.Password
 	reqLog.Type = "m.login.password"
 	reqLog.StoreCredentials = true
 	reqLog.StoreHomeserverURL = true
@@ -46,8 +47,8 @@ func doLogin(conf config.Config) (*mautrix.Client, error) {
 }
 
 func joinRooms(client *mautrix.Client, conf config.Config) error {
-	for _, r := range conf.Rooms {
-		_, err := client.JoinRoom(r, conf.Homserver, nil)
+	for _, r := range conf.Serversettings.Rooms {
+		_, err := client.JoinRoom(r, conf.Serversettings.Homserver, nil)
 		if err != nil {
 			return errors.New("Error joing Room " + r + ": " + err.Error())
 		}
@@ -65,6 +66,10 @@ func isinRoomList(roomID string, roomList []string) bool {
 }
 
 func RunBot(conf config.Config) error {
+	logger := zap.Must(conf.LoggerSettings.Build())
+	defer logger.Sync() // flushes buffer, if any
+	sugar := logger.Sugar()
+
 	client, err := doLogin(conf)
 	if err != nil {
 		return errors.New("Error logging in: " + err.Error())
@@ -76,9 +81,9 @@ func RunBot(conf config.Config) error {
 
 	syncer := client.Syncer.(*mautrix.DefaultSyncer)
 	syncer.OnEvent(func(source mautrix.EventSource, evt *event.Event) {
-		if (evt.Sender != client.UserID) && (isinRoomList(evt.RoomID.String(), conf.Rooms) && (evt.Timestamp >= startup.UnixMilli())) {
-			for _, h := range handler {
-				handled := h(client, source, evt)
+		if (evt.Sender != client.UserID) && (isinRoomList(evt.RoomID.String(), conf.Serversettings.Rooms) && (evt.Timestamp >= startup.UnixMilli())) {
+			for _, h := range handlers {
+				handled := h(client, sugar, source, evt)
 				if handled {
 					break
 				}
