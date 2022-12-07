@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Nerdbergev/Bergknecht/pkg/berghandler"
 	"github.com/Nerdbergev/Bergknecht/pkg/config"
-	"github.com/Nerdbergev/Bergknecht/pkg/eventhandler"
 	"github.com/Nerdbergev/Bergknecht/pkg/handlers/echoHandler"
 	"github.com/Nerdbergev/Bergknecht/pkg/storage"
 	"go.uber.org/zap"
@@ -14,11 +14,12 @@ import (
 	"maunium.net/go/mautrix/event"
 )
 
-var handlers []eventhandler.BergEventHandleFunction
+var handlers []berghandler.BergEventHandler
 var startup time.Time
 
 func init() {
-	handlers = append(handlers, echoHandler.Handle)
+	h := echoHandler.EchoHandler{}
+	handlers = append(handlers, h)
 	startup = time.Now()
 }
 
@@ -83,13 +84,13 @@ func RunBot(conf config.Config) error {
 	sm := storage.CreateStorageManager(conf.StorageSettings)
 	defer sm.DeleteCache()
 
-	he := eventhandler.HandlerEssentials{Client: client, Logger: sugar, Storage: sm}
+	he := berghandler.HandlerEssentials{Client: client, Logger: sugar, Storage: sm}
 
 	syncer := client.Syncer.(*mautrix.DefaultSyncer)
 	syncer.OnEvent(func(source mautrix.EventSource, evt *event.Event) {
 		if (evt.Sender != client.UserID) && (isinRoomList(evt.RoomID.String(), conf.Serversettings.Rooms) && (evt.Timestamp >= startup.UnixMilli())) {
 			for _, h := range handlers {
-				handled := h(he, source, evt)
+				handled := h.Handle(he, source, evt)
 				if handled {
 					break
 				}
