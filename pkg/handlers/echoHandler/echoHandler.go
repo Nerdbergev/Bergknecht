@@ -33,5 +33,5 @@ func (h EchoHandler) Handle(he berghandler.HandlerEssentials, source mautrix.Eve
 		f.WriteString(m.Body)
 		f.Sync()
 	}
-	return true
+	return false
 }

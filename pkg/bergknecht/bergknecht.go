@@ -7,7 +7,7 @@ import (
 
 	"github.com/Nerdbergev/Bergknecht/pkg/berghandler"
 	"github.com/Nerdbergev/Bergknecht/pkg/config"
-	"github.com/Nerdbergev/Bergknecht/pkg/handlers/echoHandler"
+	"github.com/Nerdbergev/Bergknecht/pkg/handlers/bestellungHandler"
 	"github.com/Nerdbergev/Bergknecht/pkg/storage"
 	"go.uber.org/zap"
 	"maunium.net/go/mautrix"
@@ -18,7 +18,7 @@ var handlers []berghandler.BergEventHandler
 var startup time.Time
 
 func init() {
-	h := echoHandler.EchoHandler{}
+	h := bestellungHandler.BestellungHandler{}
 	handlers = append(handlers, h)
 	startup = time.Now()
 }
@@ -72,20 +72,32 @@ func RunBot(conf config.Config) error {
 	defer logger.Sync() // flushes buffer, if any
 	sugar := logger.Sugar()
 
+	sugar.Infow("Logging in")
 	client, err := doLogin(conf)
 	if err != nil {
 		return errors.New("Error logging in: " + err.Error())
 	}
+	sugar.Infow("Joining Rooms")
 	err = joinRooms(client, conf)
 	if err != nil {
 		return errors.New("Error joining in: " + err.Error())
 	}
 
+	sugar.Infow("Setting up Storage")
 	sm := storage.CreateStorageManager(conf.StorageSettings)
 	defer sm.DeleteCache()
 
 	he := berghandler.HandlerEssentials{Client: client, Logger: sugar, Storage: sm}
 
+	sugar.Infow("Loading Handler Data")
+	for _, h := range handlers {
+		err := h.LoadData(he)
+		if err != nil {
+			sugar.Errorw("Hanlder unable to load data", "handlername", h.GetName(), "error", err)
+		}
+	}
+
+	sugar.Infow("Starting Syncer")
 	syncer := client.Syncer.(*mautrix.DefaultSyncer)
 	syncer.OnEvent(func(source mautrix.EventSource, evt *event.Event) {
 		if (evt.Sender != client.UserID) && (isinRoomList(evt.RoomID.String(), conf.Serversettings.Rooms) && (evt.Timestamp >= startup.UnixMilli())) {

@@ -22,8 +22,6 @@ func main() {
 		log.Fatal("Error loading config:", err)
 	}
 
-	log.Println(c)
-
 	err = bergknecht.RunBot(c)
 	if err != nil {
 		log.Fatal("Error Running Bot:", err)
