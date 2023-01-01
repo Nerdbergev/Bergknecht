@@ -1,6 +1,7 @@
 package bestellungHandler
 
 import (
+	"fmt"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -45,23 +46,48 @@ type Version struct {
 type Bestellung struct {
 	Ersteller    User
 	LieferDienst string
+	Nummer       string
 	Positionen   []Position
-}
-
-func (b *Bestellung) removePosition(i int) {
-	if (i > 0) && (i < len(b.Positionen)) {
-		b.Positionen = append(b.Positionen[:i], b.Positionen[i+1:]...)
-	}
 }
 
 func (b *Bestellung) prettyFormat() string {
 	t := table.NewWriter()
-	t.SetStyle(table.StyleLight)
+	t.SetStyle(table.StyleColoredDark)
+	t.SetTitle("Bestellung bei " + b.LieferDienst)
 	t.AppendHeader(table.Row{"#", "Nummer", "Name", "Version", "Anzahl", "Kommentar", "Besteller"})
 	for i, p := range b.Positionen {
 		t.AppendRow(table.Row{i, p.ArtikelNummer, p.ArtikelName, p.Version, p.Anzahl, p.Kommentar, p.Besteller[0].DisplayName})
 	}
 	return t.RenderHTML()
+}
+
+func (b *Bestellung) getCallText() string {
+	var newbestellung Bestellung
+	for _, p := range b.Positionen {
+		added := false
+		for i, p2 := range newbestellung.Positionen {
+			if p.isSameAs(p2) {
+				newbestellung.Positionen[i].Anzahl += p.Anzahl
+				newbestellung.Positionen[i].Besteller = append(newbestellung.Positionen[i].Besteller, p.Besteller...)
+				added = true
+				break
+			}
+		}
+		if !added {
+			newbestellung.Positionen = append(newbestellung.Positionen, p)
+		}
+	}
+	result := "Lieferdienst: " + b.LieferDienst + "\n"
+	result = result + "Telefonnummer: " + b.Nummer + "\n\n"
+	result = result + "Hallo Nord mein Name ich würde gerne Bestellen und zwar: \n"
+	for _, p := range newbestellung.Positionen {
+		if p.ArtikelNummer != "" {
+			result = result + fmt.Sprintf("%v mal die Nummer %v %v in %v %v\n", p.Anzahl, p.ArtikelNummer, p.ArtikelName, p.Version, p.Kommentar)
+		} else {
+			result = result + fmt.Sprintf("%v mal %v in %v %v\n", p.Anzahl, p.ArtikelName, p.Version, p.Kommentar)
+		}
+	}
+	return result
 }
 
 type Position struct {
@@ -72,6 +98,15 @@ type Position struct {
 	Anzahl        int
 	Besteller     []User
 	Kommentar     string
+}
+
+func (p *Position) isSameAs(p2 Position) bool {
+	result := true
+	result = result && (p.ArtikelName == p2.ArtikelName)
+	result = result && (p.ArtikelNummer == p2.ArtikelNummer)
+	result = result && (p.Version == p2.Version)
+	result = result && (p.Kommentar == p2.Kommentar)
+	return result
 }
 
 func (h *BestellungHandler) LoadData(he berghandler.HandlerEssentials) error {
@@ -102,6 +137,8 @@ func (h *BestellungHandler) Handle(he berghandler.HandlerEssentials, source maut
 			result = h.addtoOrder(he, evt, newwords)
 		case "show":
 			result = h.printOrder(he, evt, newwords)
+		case "call-text":
+			result = h.getCallText(he, evt, newwords)
 		default:
 			return berghandler.SendMessage(he, evt, handlerName, "Kein valides Argument, benutze !bestellung help für Hilfe")
 		}
@@ -131,7 +168,7 @@ func (h *BestellungHandler) newOrder(he berghandler.HandlerEssentials, evt *even
 		return berghandler.SendMessage(he, evt, handlerName, wrongArguments)
 	}
 	ld := strings.ToLower(words[0])
-	found, _ := h.searchLieferdienst(ld)
+	found, l := h.searchLieferdienst(ld)
 	if !found {
 		return berghandler.SendMessage(he, evt, handlerName, "Lieferdienst nicht gefunden, benutze !bestellung dienste für eine Liste")
 	}
@@ -144,6 +181,7 @@ func (h *BestellungHandler) newOrder(he berghandler.HandlerEssentials, evt *even
 	be := Bestellung{}
 	be.Ersteller = User{evt.Sender.Localpart(), evt.Sender.String()}
 	be.LieferDienst = ld
+	be.Nummer = l.Telefonnummer
 	err := he.Storage.EncodeFile(handlerName, bnf, storage.TOML, false, be)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, "Fehler bei erstellung der Bestellung")
@@ -236,4 +274,23 @@ func (h *BestellungHandler) printOrder(he berghandler.HandlerEssentials, evt *ev
 	}
 	msg := be.prettyFormat()
 	return berghandler.SendFormattedMessage(he, evt, handlerName, msg)
+}
+
+func (h *BestellungHandler) getCallText(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+	var order string
+	err := berghandler.SplitAnswer(words, 1, 0, &order)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, wrongArguments+" "+err.Error())
+	}
+	ex := he.Storage.DoesFileExist(handlerName, order+".toml", false)
+	if !ex {
+		return berghandler.SendMessage(he, evt, handlerName, "Bestellung nicht vorhanden")
+	}
+	be := Bestellung{}
+	err = he.Storage.DecodeFile(handlerName, order+".toml", storage.TOML, false, &be)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der bestellung: "+err.Error())
+	}
+	msg := be.getCallText()
+	return berghandler.SendMessage(he, evt, handlerName, msg)
 }

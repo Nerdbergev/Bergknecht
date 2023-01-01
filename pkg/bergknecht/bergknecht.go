@@ -103,11 +103,13 @@ func RunBot(conf config.Config) error {
 	sugar.Infow("Starting Syncer")
 	syncer := client.Syncer.(*mautrix.DefaultSyncer)
 	syncer.OnEvent(func(source mautrix.EventSource, evt *event.Event) {
-		if (evt.Sender != client.UserID) && (isinRoomList(evt.RoomID.String(), conf.Serversettings.Rooms) && (evt.Timestamp >= startup.UnixMilli())) {
-			for _, h := range handlers {
-				handled := h.Handle(he, source, evt)
-				if handled {
-					break
+		if evt.Timestamp >= startup.UnixMilli() {
+			if (evt.Sender != client.UserID) && (isinRoomList(evt.RoomID.String(), conf.Serversettings.Rooms)) {
+				for _, h := range handlers {
+					handled := h.Handle(he, source, evt)
+					if handled {
+						break
+					}
 				}
 			}
 		}
