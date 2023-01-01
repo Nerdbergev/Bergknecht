@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path"
 	"path/filepath"
 
 	"github.com/pelletier/go-toml"
@@ -33,16 +34,35 @@ func CreateStorageManager(c Config) *Manager {
 	return res
 }
 
-func (sm *Manager) GetFile(Handlername, Filename string, persitent bool) (*os.File, error) {
+func (sm *Manager) getFilenameandPath(Handlername, Filename string, persitent bool) (string, string) {
+	Filename = path.Base(Filename)
 	var path string
 	if persitent {
 		path = filepath.Join(sm.peristentPath, Handlername)
 	} else {
 		path = filepath.Join(sm.cachedPath, Handlername)
 	}
+	fullpath := filepath.Join(path, Filename)
+	return fullpath, path
+}
+
+func (sm *Manager) DoesFileExist(Handlername, Filename string, persitent bool) bool {
+	fullpath, _ := sm.getFilenameandPath(Handlername, Filename, persitent)
+	if _, err := os.Stat(fullpath); err == nil {
+		return true
+
+	} else if errors.Is(err, os.ErrNotExist) {
+		return false
+	} else {
+		// Schrodinger: file may or may not exist. See err for details.
+		return false
+	}
+}
+
+func (sm *Manager) GetFile(Handlername, Filename string, persitent bool) (*os.File, error) {
+	fullpath, path := sm.getFilenameandPath(Handlername, Filename, persitent)
 	os.MkdirAll(path, os.ModePerm)
-	path = filepath.Join(path, Filename)
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_RDWR|os.O_CREATE, 0644)
+	f, err := os.OpenFile(fullpath, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, errors.New("Error opening or creating file: " + err.Error())
 	}

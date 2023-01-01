@@ -2,8 +2,8 @@ package bestellungHandler
 
 import (
 	"math/rand"
+	"strconv"
 	"strings"
-	"time"
 
 	"github.com/Nerdbergev/Bergknecht/pkg/berghandler"
 	"github.com/Nerdbergev/Bergknecht/pkg/storage"
@@ -12,6 +12,11 @@ import (
 )
 
 var handlerName = "BestellungHandler"
+
+type User struct {
+	DisplayName string
+	MatrixID    string
+}
 
 type BestellungHandler struct {
 	Lieferdienste []LieferDienst
@@ -24,6 +29,7 @@ type LieferDienst struct {
 }
 
 type Artikel struct {
+	Nummer    string
 	Name      string
 	Versionen []Version
 }
@@ -33,27 +39,48 @@ type Version struct {
 	Preis float32
 }
 
-func (h BestellungHandler) LoadData(he berghandler.HandlerEssentials) error {
-	return he.Storage.DecodeFile(handlerName, "lieferdienste.toml", storage.TOML, true, &h)
+type Bestellung struct {
+	Ersteller    User
+	LieferDienst string
+	Positionen   []Position
 }
 
-func (h BestellungHandler) GetName() string {
+type Position struct {
+	ArtikelNummer string
+	ArtikelName   string
+	Version       string
+	Einzelpreis   float32
+	Anzahl        int
+	Besteller     []User
+	Kommentar     string
+}
+
+func (h *BestellungHandler) LoadData(he berghandler.HandlerEssentials) error {
+	return he.Storage.DecodeFile(handlerName, "lieferdienste.toml", storage.TOML, true, h)
+}
+
+func (h *BestellungHandler) GetName() string {
 	return handlerName
 }
 
-func (h BestellungHandler) Handle(he berghandler.HandlerEssentials, source mautrix.EventSource, evt *event.Event) bool {
+func (h *BestellungHandler) Handle(he berghandler.HandlerEssentials, source mautrix.EventSource, evt *event.Event) bool {
 	result := false
 	if berghandler.IsMessagewithPrefix(evt, "bestellung") {
 		m := evt.Content.AsMessage()
-		msg := berghandler.StripPrefix(m.Body, "bestellung")
-		words := strings.Split(msg, " ")
+		words, err := berghandler.StripPrefixandGetContent(m.Body, "bestellung ")
+		if err != nil {
+			return berghandler.SendMessage(he, evt, handlerName, "Fehler bei decodieren der Nachricht: "+err.Error())
+		}
 		if len(words) < 2 {
 			return berghandler.SendMessage(he, evt, handlerName, "Zu wenig Argumente, benutze !bestellung help für Hilfe")
 		}
 		cmd := strings.ToLower(words[0])
+		newwords := berghandler.RemoveWord(words, 0)
 		switch cmd {
 		case "neu":
-			result = h.newOrder(he, evt, words)
+			result = h.newOrder(he, evt, newwords)
+		case "add":
+			result = h.addtoOrder(he, evt, newwords)
 		default:
 			return berghandler.SendMessage(he, evt, handlerName, "Kein valides Argument, benutze !bestellung help für Hilfe")
 		}
@@ -61,32 +88,112 @@ func (h BestellungHandler) Handle(he berghandler.HandlerEssentials, source mautr
 	return result
 }
 
-func getRandomWord(r *rand.Rand, slice []string) string {
+func getRandomWord(slice []string) string {
 	return slice[rand.Intn(len(slice))]
 }
 
-func (h *BestellungHandler) newOrder(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
-	if len(words) < 2 {
-		return berghandler.SendMessage(he, evt, handlerName, "Zu wenig Argumente, benutze !bestellung help für Hilfe")
-	}
-	ld := strings.ToLower(words[1])
+func (h *BestellungHandler) searchLieferdienst(ld string) (bool, LieferDienst) {
 	found := false
+	res := LieferDienst{}
 	for _, l := range h.Lieferdienste {
-		if strings.Compare(ld, l.Name) == 0 {
+		if strings.Compare(ld, strings.ToLower(l.Name)) == 0 {
 			found = true
+			res = l
+			break
 		}
 	}
+	return found, res
+}
+
+func (h *BestellungHandler) newOrder(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+	if len(words) < 1 {
+		return berghandler.SendMessage(he, evt, handlerName, "Zu wenig Argumente, benutze !bestellung help für Hilfe")
+	}
+	ld := strings.ToLower(words[0])
+	found, _ := h.searchLieferdienst(ld)
 	if !found {
 		return berghandler.SendMessage(he, evt, handlerName, "Lieferdienst nicht gefunden, benutze !bestellung dienste für eine Liste")
 	}
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	z := getRandomWord(r, zahlen)
-	a := getRandomWord(r, adjektive)
-	n := getRandomWord(r, nomen)
-	bn := z + "-" + a + "-" + n
-	_, err := he.Storage.GetFile(handlerName, bn, false)
+	z := getRandomWord(zahlen)
+	a := getRandomWord(adjektive)
+	n := getRandomWord(nomen)
+	bn := strings.ToLower(z + "-" + a + "-" + n)
+	bnf := bn + ".toml"
+
+	be := Bestellung{}
+	be.Ersteller = User{evt.Sender.Localpart(), evt.Sender.String()}
+	be.LieferDienst = ld
+	err := he.Storage.EncodeFile(handlerName, bnf, storage.TOML, false, be)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, "Fehler bei erstellung der Bestellung")
 	}
+
 	return berghandler.SendMessage(he, evt, handlerName, "Neue Bestellung mit dem Name: "+bn+" erstellt")
+}
+
+func (h *BestellungHandler) addtoOrder(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+	var order, artikel, version, kommentar, anzahl string
+	err := berghandler.SplitAnswer(words, 2, 3, &order, &artikel, &version, &kommentar, &anzahl)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Falsche Anzahl an Argumenten: "+err.Error())
+	}
+	ex := he.Storage.DoesFileExist(handlerName, order+".toml", false)
+	if !ex {
+		return berghandler.SendMessage(he, evt, handlerName, "Bestellung nicht vorhanden")
+	}
+	amount := 1
+	if len(words) >= 6 {
+		a, err := strconv.Atoi(anzahl)
+		if err != nil {
+			return berghandler.SendMessage(he, evt, handlerName, "Menge konnte nicht konvertiert werden: "+err.Error())
+		}
+		amount = a
+	}
+	be := Bestellung{}
+	err = he.Storage.DecodeFile(handlerName, order+".toml", storage.TOML, false, &be)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der bestellung: "+err.Error())
+	}
+	ex, ld := h.searchLieferdienst(be.LieferDienst)
+	if !ex {
+		return berghandler.SendMessage(he, evt, handlerName, "Lieferdienst nicht gefunden, benutze !bestellung dienste für eine Liste")
+	}
+	ex = false
+	var desiredArtikel Artikel
+	for _, a := range ld.Artikel {
+		if (strings.Compare(artikel, strings.ToLower(a.Name)) == 0) || (strings.Compare(artikel, strings.ToLower(a.Nummer)) == 0) {
+			ex = true
+			desiredArtikel = a
+			break
+		}
+	}
+	if !ex {
+		return berghandler.SendMessage(he, evt, handlerName, "Artikel nicht gefunden, benutze !bestellung $Lieferdienst artikel für eine Liste")
+	}
+	desiredVersion := desiredArtikel.Versionen[0]
+	if len(desiredArtikel.Versionen) > 1 {
+		ex = false
+		for _, v := range desiredArtikel.Versionen {
+			if strings.Compare(version, strings.ToLower(v.Name)) == 0 {
+				ex = true
+				desiredVersion = v
+				break
+			}
+		}
+	}
+	orderedby := User{evt.Sender.Localpart(), evt.Sender.String()}
+	posi := Position{}
+	posi.ArtikelNummer = desiredArtikel.Nummer
+	posi.ArtikelName = desiredArtikel.Name
+	posi.Version = desiredVersion.Name
+	posi.Einzelpreis = desiredVersion.Preis
+	posi.Besteller = append(posi.Besteller, orderedby)
+	posi.Anzahl = amount
+	posi.Kommentar = kommentar
+	be.Positionen = append(be.Positionen, posi)
+	err = he.Storage.EncodeFile(handlerName, order+".toml", storage.TOML, false, be)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Speicerhn der bestellung: "+err.Error())
+	}
+	return berghandler.SendMessage(he, evt, handlerName, "Artikel hinzugefügt")
 }

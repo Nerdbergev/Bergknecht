@@ -2,6 +2,7 @@ package bergknecht
 
 import (
 	"errors"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -19,7 +20,7 @@ var startup time.Time
 
 func init() {
 	h := bestellungHandler.BestellungHandler{}
-	handlers = append(handlers, h)
+	handlers = append(handlers, &h)
 	startup = time.Now()
 }
 
@@ -86,6 +87,8 @@ func RunBot(conf config.Config) error {
 	sugar.Infow("Setting up Storage")
 	sm := storage.CreateStorageManager(conf.StorageSettings)
 	defer sm.DeleteCache()
+
+	rand.Seed(time.Now().UnixNano())
 
 	he := berghandler.HandlerEssentials{Client: client, Logger: sugar, Storage: sm}
 
