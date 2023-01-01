@@ -39,7 +39,7 @@ func IsMessagewithPrefix(evt *event.Event, prefix string) bool {
 }
 
 func StripPrefix(message, prefix string) string {
-	return strings.TrimPrefix(message, commandPrefix+prefix)
+	return strings.TrimPrefix(message, commandPrefix+prefix+" ")
 }
 
 func StripPrefixandGetContent(message, prefix string) ([]string, error) {
@@ -51,6 +51,19 @@ func StripPrefixandGetContent(message, prefix string) ([]string, error) {
 
 func SendMessage(he HandlerEssentials, evt *event.Event, handlerName, msg string) bool {
 	_, err := he.Client.SendText(evt.RoomID, msg)
+	if err != nil {
+		he.Logger.Errorw("Error sending Message", "Handler", handlerName, "Error", err)
+		return false
+	}
+	return true
+}
+
+func SendFormattedMessage(he HandlerEssentials, evt *event.Event, handlerName, msg string) bool {
+	_, err := he.Client.SendMessageEvent(evt.RoomID, event.EventMessage, &event.MessageEventContent{
+		MsgType:       event.MsgText,
+		Format:        event.FormatHTML,
+		FormattedBody: msg,
+	})
 	if err != nil {
 		he.Logger.Errorw("Error sending Message", "Handler", handlerName, "Error", err)
 		return false

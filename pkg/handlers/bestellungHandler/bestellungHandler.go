@@ -7,9 +7,12 @@ import (
 
 	"github.com/Nerdbergev/Bergknecht/pkg/berghandler"
 	"github.com/Nerdbergev/Bergknecht/pkg/storage"
+	"github.com/jedib0t/go-pretty/v6/table"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 )
+
+const wrongArguments = "Falsche Anzahl an Argumenten, benutze !bestellung help für Hilfe."
 
 var handlerName = "BestellungHandler"
 
@@ -45,6 +48,22 @@ type Bestellung struct {
 	Positionen   []Position
 }
 
+func (b *Bestellung) removePosition(i int) {
+	if (i > 0) && (i < len(b.Positionen)) {
+		b.Positionen = append(b.Positionen[:i], b.Positionen[i+1:]...)
+	}
+}
+
+func (b *Bestellung) prettyFormat() string {
+	t := table.NewWriter()
+	t.SetStyle(table.StyleLight)
+	t.AppendHeader(table.Row{"#", "Nummer", "Name", "Version", "Anzahl", "Kommentar", "Besteller"})
+	for i, p := range b.Positionen {
+		t.AppendRow(table.Row{i, p.ArtikelNummer, p.ArtikelName, p.Version, p.Anzahl, p.Kommentar, p.Besteller[0].DisplayName})
+	}
+	return t.RenderHTML()
+}
+
 type Position struct {
 	ArtikelNummer string
 	ArtikelName   string
@@ -67,20 +86,22 @@ func (h *BestellungHandler) Handle(he berghandler.HandlerEssentials, source maut
 	result := false
 	if berghandler.IsMessagewithPrefix(evt, "bestellung") {
 		m := evt.Content.AsMessage()
-		words, err := berghandler.StripPrefixandGetContent(m.Body, "bestellung ")
+		words, err := berghandler.StripPrefixandGetContent(m.Body, "bestellung")
 		if err != nil {
 			return berghandler.SendMessage(he, evt, handlerName, "Fehler bei decodieren der Nachricht: "+err.Error())
 		}
 		if len(words) < 2 {
-			return berghandler.SendMessage(he, evt, handlerName, "Zu wenig Argumente, benutze !bestellung help für Hilfe")
+			return berghandler.SendMessage(he, evt, handlerName, wrongArguments)
 		}
 		cmd := strings.ToLower(words[0])
 		newwords := berghandler.RemoveWord(words, 0)
 		switch cmd {
-		case "neu":
+		case "new":
 			result = h.newOrder(he, evt, newwords)
 		case "add":
 			result = h.addtoOrder(he, evt, newwords)
+		case "show":
+			result = h.printOrder(he, evt, newwords)
 		default:
 			return berghandler.SendMessage(he, evt, handlerName, "Kein valides Argument, benutze !bestellung help für Hilfe")
 		}
@@ -107,7 +128,7 @@ func (h *BestellungHandler) searchLieferdienst(ld string) (bool, LieferDienst) {
 
 func (h *BestellungHandler) newOrder(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
 	if len(words) < 1 {
-		return berghandler.SendMessage(he, evt, handlerName, "Zu wenig Argumente, benutze !bestellung help für Hilfe")
+		return berghandler.SendMessage(he, evt, handlerName, wrongArguments)
 	}
 	ld := strings.ToLower(words[0])
 	found, _ := h.searchLieferdienst(ld)
@@ -135,7 +156,7 @@ func (h *BestellungHandler) addtoOrder(he berghandler.HandlerEssentials, evt *ev
 	var order, artikel, version, kommentar, anzahl string
 	err := berghandler.SplitAnswer(words, 2, 3, &order, &artikel, &version, &kommentar, &anzahl)
 	if err != nil {
-		return berghandler.SendMessage(he, evt, handlerName, "Falsche Anzahl an Argumenten: "+err.Error())
+		return berghandler.SendMessage(he, evt, handlerName, wrongArguments+" "+err.Error())
 	}
 	ex := he.Storage.DoesFileExist(handlerName, order+".toml", false)
 	if !ex {
@@ -196,4 +217,23 @@ func (h *BestellungHandler) addtoOrder(he berghandler.HandlerEssentials, evt *ev
 		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Speicerhn der bestellung: "+err.Error())
 	}
 	return berghandler.SendMessage(he, evt, handlerName, "Artikel hinzugefügt")
+}
+
+func (h *BestellungHandler) printOrder(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+	var order string
+	err := berghandler.SplitAnswer(words, 1, 0, &order)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, wrongArguments+" "+err.Error())
+	}
+	ex := he.Storage.DoesFileExist(handlerName, order+".toml", false)
+	if !ex {
+		return berghandler.SendMessage(he, evt, handlerName, "Bestellung nicht vorhanden")
+	}
+	be := Bestellung{}
+	err = he.Storage.DecodeFile(handlerName, order+".toml", storage.TOML, false, &be)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der bestellung: "+err.Error())
+	}
+	msg := be.prettyFormat()
+	return berghandler.SendFormattedMessage(he, evt, handlerName, msg)
 }
