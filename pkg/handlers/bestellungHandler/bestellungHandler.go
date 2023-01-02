@@ -1,6 +1,7 @@
 package bestellungHandler
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"strconv"
@@ -164,10 +165,11 @@ func (h *BestellungHandler) searchLieferdienst(ld string) (bool, LieferDienst) {
 }
 
 func (h *BestellungHandler) newOrder(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
-	if len(words) < 1 {
-		return berghandler.SendMessage(he, evt, handlerName, wrongArguments)
+	var ld string
+	err := berghandler.SplitAnswer(words, 1, 0, &ld)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, wrongArguments+" "+err.Error())
 	}
-	ld := strings.ToLower(words[0])
 	found, l := h.searchLieferdienst(ld)
 	if !found {
 		return berghandler.SendMessage(he, evt, handlerName, "Lieferdienst nicht gefunden, benutze !bestellung dienste für eine Liste")
@@ -182,7 +184,7 @@ func (h *BestellungHandler) newOrder(he berghandler.HandlerEssentials, evt *even
 	be.Ersteller = User{evt.Sender.Localpart(), evt.Sender.String()}
 	be.LieferDienst = ld
 	be.Nummer = l.Telefonnummer
-	err := he.Storage.EncodeFile(handlerName, bnf, storage.TOML, false, be)
+	err = he.Storage.EncodeFile(handlerName, bnf, storage.TOML, false, be)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, "Fehler bei erstellung der Bestellung")
 	}
@@ -257,40 +259,42 @@ func (h *BestellungHandler) addtoOrder(he berghandler.HandlerEssentials, evt *ev
 	return berghandler.SendMessage(he, evt, handlerName, "Artikel hinzugefügt")
 }
 
-func (h *BestellungHandler) printOrder(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+func (h *BestellungHandler) loadOrder(he berghandler.HandlerEssentials, words []string) (Bestellung, error) {
 	var order string
+	be := Bestellung{}
 	err := berghandler.SplitAnswer(words, 1, 0, &order)
 	if err != nil {
-		return berghandler.SendMessage(he, evt, handlerName, wrongArguments+" "+err.Error())
+		return be, errors.New(wrongArguments + " " + err.Error())
 	}
 	ex := he.Storage.DoesFileExist(handlerName, order+".toml", false)
 	if !ex {
-		return berghandler.SendMessage(he, evt, handlerName, "Bestellung nicht vorhanden")
+		return be, errors.New("Bestellung nicht vorhanden")
 	}
-	be := Bestellung{}
 	err = he.Storage.DecodeFile(handlerName, order+".toml", storage.TOML, false, &be)
 	if err != nil {
-		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der bestellung: "+err.Error())
+		return be, errors.New("Fehler beim Laden der bestellung: " + err.Error())
+	}
+	return be, nil
+}
+
+func (h *BestellungHandler) printOrder(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+	be, err := h.loadOrder(he, words)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der Bestellung: "+err.Error())
 	}
 	msg := be.prettyFormat()
 	return berghandler.SendFormattedMessage(he, evt, handlerName, msg)
 }
 
 func (h *BestellungHandler) getCallText(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
-	var order string
-	err := berghandler.SplitAnswer(words, 1, 0, &order)
+	be, err := h.loadOrder(he, words)
 	if err != nil {
-		return berghandler.SendMessage(he, evt, handlerName, wrongArguments+" "+err.Error())
-	}
-	ex := he.Storage.DoesFileExist(handlerName, order+".toml", false)
-	if !ex {
-		return berghandler.SendMessage(he, evt, handlerName, "Bestellung nicht vorhanden")
-	}
-	be := Bestellung{}
-	err = he.Storage.DecodeFile(handlerName, order+".toml", storage.TOML, false, &be)
-	if err != nil {
-		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der bestellung: "+err.Error())
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der Bestellung: "+err.Error())
 	}
 	msg := be.getCallText()
 	return berghandler.SendMessage(he, evt, handlerName, msg)
+}
+
+func (h *BestellungHandler) printPayment(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+	return true
 }
