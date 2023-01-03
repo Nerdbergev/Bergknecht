@@ -62,7 +62,7 @@ func (sm *Manager) DoesFileExist(Handlername, Filename string, persitent bool) b
 func (sm *Manager) GetFile(Handlername, Filename string, persitent bool) (*os.File, error) {
 	fullpath, path := sm.getFilenameandPath(Handlername, Filename, persitent)
 	os.MkdirAll(path, os.ModePerm)
-	f, err := os.OpenFile(fullpath, os.O_RDWR|os.O_CREATE, 0644)
+	f, err := os.OpenFile(fullpath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		return nil, errors.New("Error opening or creating file: " + err.Error())
 	}
