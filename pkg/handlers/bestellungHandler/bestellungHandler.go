@@ -18,6 +18,8 @@ import (
 const handlerName = "BestellungHandler"
 const command = "bestellung"
 
+const unauthorized = "Nur der Bestellungs ersteller kann dieses Kommando ausführen"
+
 type User struct {
 	DisplayName string
 	MatrixID    string
@@ -52,6 +54,12 @@ type Bestellung struct {
 	Positionen   []Position
 	Total        float64
 	Payed        float64
+}
+
+func (b *Bestellung) removePosition(i int) {
+	if (i > -1) && (i < len(b.Positionen)) {
+		b.Positionen = append(b.Positionen[:i], b.Positionen[i+1:]...)
+	}
 }
 
 func (b *Bestellung) prettyFormat() string {
@@ -124,8 +132,48 @@ func (b *Bestellung) getTotal() string {
 	return t.RenderHTML()
 }
 
+type paymentInfo struct {
+	Payee  User
+	Amount float64
+}
+
+func (b *Bestellung) calcPayment() ([]paymentInfo, float64) {
+	var result []paymentInfo
+	off := (100 / b.Total * b.Payed) / 100
+	for _, p := range b.Positionen {
+		payment := p.getTotal() * off
+		found := false
+		for i, pi := range result {
+			if pi.Payee == p.Besteller[0] {
+				result[i].Amount += payment
+				found = true
+				break
+			}
+		}
+		if !found {
+			result = append(result, paymentInfo{Payee: p.Besteller[0], Amount: payment})
+		}
+	}
+	return result, off
+}
+
 func (b *Bestellung) getPayment() string {
-	return ""
+	pi, off := b.calcPayment()
+	t := table.NewWriter()
+	t.SetStyle(table.StyleColoredDark)
+	t.SetTitle("Bestellung bei " + b.LieferDienst + " Besteller Schulden")
+	t.AppendHeader(table.Row{"Rabatt", off})
+	t.AppendHeader(table.Row{"Name", "Schulden"})
+	for _, p := range pi {
+		if p.Payee != b.Ersteller {
+			t.AppendRow(table.Row{p.Payee.DisplayName, p.Amount})
+		}
+	}
+	return t.RenderHTML()
+}
+
+func (b *Bestellung) isCreator(id string) bool {
+	return strings.Compare(b.Ersteller.MatrixID, id) == 0
 }
 
 type Position struct {
@@ -151,6 +199,10 @@ func (p *Position) getTotal() float64 {
 	return float64(p.Anzahl) * p.Einzelpreis
 }
 
+func (p *Position) isBesteller(id string) bool {
+	return strings.Compare(p.Besteller[0].MatrixID, id) == 0
+}
+
 func (h *BestellungHandler) Prime(he berghandler.HandlerEssentials) error {
 	h.subHandlers = make(map[string]berghandler.SubHandlerSet)
 	h.subHandlers["new"] = berghandler.SubHandlerSet{F: h.newOrder, H: "Erstellt eine Neue Bestellung. \nUsage: new $Lieferdienst"}
@@ -159,6 +211,7 @@ func (h *BestellungHandler) Prime(he berghandler.HandlerEssentials) error {
 	h.subHandlers["call-text"] = berghandler.SubHandlerSet{F: h.getCallText, H: ""}
 	h.subHandlers["print-payment"] = berghandler.SubHandlerSet{F: h.printPayment, H: ""}
 	h.subHandlers["get-total"] = berghandler.SubHandlerSet{F: h.getTotal, H: ""}
+	h.subHandlers["remove"] = berghandler.SubHandlerSet{F: h.deletePosition, H: ""}
 
 	return he.Storage.DecodeFile(handlerName, "lieferdienste.toml", storage.TOML, true, h)
 }
@@ -363,4 +416,35 @@ func (h *BestellungHandler) printPayment(he berghandler.HandlerEssentials, evt *
 	}
 	msg := be.getPayment()
 	return berghandler.SendFormattedMessage(he, evt, handlerName, msg)
+}
+
+func (h *BestellungHandler) deletePosition(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+	var order, posis string
+	err := berghandler.SplitAnswer(words, 2, 0, &order, &posis)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
+	}
+	posi, err := strconv.Atoi(posis)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Position konnte nicht konvertiert werden: "+err.Error())
+	}
+
+	be, err := h.loadOrder(he, order)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der Bestellung: "+err.Error())
+	}
+
+	if (posi >= len(be.Positionen)) || (posi < 0) {
+		return berghandler.SendMessage(he, evt, handlerName, "Position nicht vorhanden")
+	}
+	if (!be.isCreator(evt.Sender.String())) || (!be.Positionen[posi].isBesteller(evt.Sender.String())) {
+		return berghandler.SendMessage(he, evt, handlerName, unauthorized)
+	}
+	be.removePosition(posi)
+	be.calcTotal()
+	err = he.Storage.EncodeFile(handlerName, order+".toml", storage.TOML, false, be)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Speicerhn der bestellung: "+err.Error())
+	}
+	return berghandler.SendMessage(he, evt, handlerName, "Artikel entfernt")
 }
