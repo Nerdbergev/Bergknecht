@@ -3,6 +3,7 @@ package bestellungHandler
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -14,9 +15,8 @@ import (
 	"maunium.net/go/mautrix/event"
 )
 
-const wrongArguments = "Falsche Anzahl an Argumenten, benutze !bestellung help für Hilfe."
-
-var handlerName = "BestellungHandler"
+const handlerName = "BestellungHandler"
+const command = "bestellung"
 
 type User struct {
 	DisplayName string
@@ -25,6 +25,7 @@ type User struct {
 
 type BestellungHandler struct {
 	Lieferdienste []LieferDienst
+	subHandlers   berghandler.SubHandlers
 }
 
 type LieferDienst struct {
@@ -41,7 +42,7 @@ type Artikel struct {
 
 type Version struct {
 	Name  string
-	Preis float32
+	Preis float64
 }
 
 type Bestellung struct {
@@ -49,6 +50,8 @@ type Bestellung struct {
 	LieferDienst string
 	Nummer       string
 	Positionen   []Position
+	Total        float64
+	Payed        float64
 }
 
 func (b *Bestellung) prettyFormat() string {
@@ -91,11 +94,45 @@ func (b *Bestellung) getCallText() string {
 	return result
 }
 
+func (b *Bestellung) calcTotal() {
+	var t float64
+	for _, p := range b.Positionen {
+		t += p.getTotal()
+	}
+	b.Total = t
+}
+
+func (b *Bestellung) calcTips() (float64, float64, float64, float64) {
+	var up, five, ten, twenty float64
+	up = math.Ceil(b.Total)
+	five = math.Floor(b.Total*1.05 + 0.5)
+	ten = math.Floor(b.Total*1.10 + 0.5)
+	twenty = math.Floor(b.Total*1.20 + 0.5)
+	return up, five, ten, twenty
+}
+
+func (b *Bestellung) getTotal() string {
+	up, five, ten, twenty := b.calcTips()
+	t := table.NewWriter()
+	t.SetStyle(table.StyleColoredDark)
+	t.SetTitle("Bestellung bei " + b.LieferDienst + " zu Zahlen")
+	t.AppendRow(table.Row{"Total", b.Total})
+	t.AppendRow(table.Row{"Aufgerundet", up})
+	t.AppendRow(table.Row{"5% Trinkgeld", five})
+	t.AppendRow(table.Row{"10% Trinkgeld", ten})
+	t.AppendRow(table.Row{"15% Trinkgeld", twenty})
+	return t.RenderHTML()
+}
+
+func (b *Bestellung) getPayment() string {
+	return ""
+}
+
 type Position struct {
 	ArtikelNummer string
 	ArtikelName   string
 	Version       string
-	Einzelpreis   float32
+	Einzelpreis   float64
 	Anzahl        int
 	Besteller     []User
 	Kommentar     string
@@ -110,7 +147,19 @@ func (p *Position) isSameAs(p2 Position) bool {
 	return result
 }
 
-func (h *BestellungHandler) LoadData(he berghandler.HandlerEssentials) error {
+func (p *Position) getTotal() float64 {
+	return float64(p.Anzahl) * p.Einzelpreis
+}
+
+func (h *BestellungHandler) Prime(he berghandler.HandlerEssentials) error {
+	h.subHandlers = make(map[string]berghandler.SubHandlerSet)
+	h.subHandlers["new"] = berghandler.SubHandlerSet{F: h.newOrder, H: "Erstellt eine Neue Bestellung. \nUsage: new $Lieferdienst"}
+	h.subHandlers["add"] = berghandler.SubHandlerSet{F: h.addtoOrder, H: ""}
+	h.subHandlers["show"] = berghandler.SubHandlerSet{F: h.printOrder, H: ""}
+	h.subHandlers["call-text"] = berghandler.SubHandlerSet{F: h.getCallText, H: ""}
+	h.subHandlers["print-payment"] = berghandler.SubHandlerSet{F: h.printPayment, H: ""}
+	h.subHandlers["get-total"] = berghandler.SubHandlerSet{F: h.getTotal, H: ""}
+
 	return he.Storage.DecodeFile(handlerName, "lieferdienste.toml", storage.TOML, true, h)
 }
 
@@ -118,33 +167,12 @@ func (h *BestellungHandler) GetName() string {
 	return handlerName
 }
 
+func (h *BestellungHandler) GetCommand() string {
+	return command
+}
+
 func (h *BestellungHandler) Handle(he berghandler.HandlerEssentials, source mautrix.EventSource, evt *event.Event) bool {
-	result := false
-	if berghandler.IsMessagewithPrefix(evt, "bestellung") {
-		m := evt.Content.AsMessage()
-		words, err := berghandler.StripPrefixandGetContent(m.Body, "bestellung")
-		if err != nil {
-			return berghandler.SendMessage(he, evt, handlerName, "Fehler bei decodieren der Nachricht: "+err.Error())
-		}
-		if len(words) < 2 {
-			return berghandler.SendMessage(he, evt, handlerName, wrongArguments)
-		}
-		cmd := strings.ToLower(words[0])
-		newwords := berghandler.RemoveWord(words, 0)
-		switch cmd {
-		case "new":
-			result = h.newOrder(he, evt, newwords)
-		case "add":
-			result = h.addtoOrder(he, evt, newwords)
-		case "show":
-			result = h.printOrder(he, evt, newwords)
-		case "call-text":
-			result = h.getCallText(he, evt, newwords)
-		default:
-			return berghandler.SendMessage(he, evt, handlerName, "Kein valides Argument, benutze !bestellung help für Hilfe")
-		}
-	}
-	return result
+	return h.subHandlers.Handle(command, handlerName, he, evt)
 }
 
 func getRandomWord(slice []string) string {
@@ -168,7 +196,7 @@ func (h *BestellungHandler) newOrder(he berghandler.HandlerEssentials, evt *even
 	var ld string
 	err := berghandler.SplitAnswer(words, 1, 0, &ld)
 	if err != nil {
-		return berghandler.SendMessage(he, evt, handlerName, wrongArguments+" "+err.Error())
+		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
 	}
 	found, l := h.searchLieferdienst(ld)
 	if !found {
@@ -196,24 +224,19 @@ func (h *BestellungHandler) addtoOrder(he berghandler.HandlerEssentials, evt *ev
 	var order, artikel, version, kommentar, anzahl string
 	err := berghandler.SplitAnswer(words, 2, 3, &order, &artikel, &version, &kommentar, &anzahl)
 	if err != nil {
-		return berghandler.SendMessage(he, evt, handlerName, wrongArguments+" "+err.Error())
-	}
-	ex := he.Storage.DoesFileExist(handlerName, order+".toml", false)
-	if !ex {
-		return berghandler.SendMessage(he, evt, handlerName, "Bestellung nicht vorhanden")
+		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
 	}
 	amount := 1
-	if len(words) >= 6 {
+	if anzahl != "" {
 		a, err := strconv.Atoi(anzahl)
 		if err != nil {
 			return berghandler.SendMessage(he, evt, handlerName, "Menge konnte nicht konvertiert werden: "+err.Error())
 		}
 		amount = a
 	}
-	be := Bestellung{}
-	err = he.Storage.DecodeFile(handlerName, order+".toml", storage.TOML, false, &be)
+	be, err := h.loadOrder(he, order)
 	if err != nil {
-		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der bestellung: "+err.Error())
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der Bestellung: "+err.Error())
 	}
 	ex, ld := h.searchLieferdienst(be.LieferDienst)
 	if !ex {
@@ -252,6 +275,7 @@ func (h *BestellungHandler) addtoOrder(he berghandler.HandlerEssentials, evt *ev
 	posi.Anzahl = amount
 	posi.Kommentar = kommentar
 	be.Positionen = append(be.Positionen, posi)
+	be.calcTotal()
 	err = he.Storage.EncodeFile(handlerName, order+".toml", storage.TOML, false, be)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Speicerhn der bestellung: "+err.Error())
@@ -259,18 +283,13 @@ func (h *BestellungHandler) addtoOrder(he berghandler.HandlerEssentials, evt *ev
 	return berghandler.SendMessage(he, evt, handlerName, "Artikel hinzugefügt")
 }
 
-func (h *BestellungHandler) loadOrder(he berghandler.HandlerEssentials, words []string) (Bestellung, error) {
-	var order string
+func (h *BestellungHandler) loadOrder(he berghandler.HandlerEssentials, order string) (Bestellung, error) {
 	be := Bestellung{}
-	err := berghandler.SplitAnswer(words, 1, 0, &order)
-	if err != nil {
-		return be, errors.New(wrongArguments + " " + err.Error())
-	}
 	ex := he.Storage.DoesFileExist(handlerName, order+".toml", false)
 	if !ex {
 		return be, errors.New("Bestellung nicht vorhanden")
 	}
-	err = he.Storage.DecodeFile(handlerName, order+".toml", storage.TOML, false, &be)
+	err := he.Storage.DecodeFile(handlerName, order+".toml", storage.TOML, false, &be)
 	if err != nil {
 		return be, errors.New("Fehler beim Laden der bestellung: " + err.Error())
 	}
@@ -278,7 +297,12 @@ func (h *BestellungHandler) loadOrder(he berghandler.HandlerEssentials, words []
 }
 
 func (h *BestellungHandler) printOrder(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
-	be, err := h.loadOrder(he, words)
+	var order string
+	err := berghandler.SplitAnswer(words, 1, 0, &order)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
+	}
+	be, err := h.loadOrder(he, order)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der Bestellung: "+err.Error())
 	}
@@ -287,7 +311,12 @@ func (h *BestellungHandler) printOrder(he berghandler.HandlerEssentials, evt *ev
 }
 
 func (h *BestellungHandler) getCallText(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
-	be, err := h.loadOrder(he, words)
+	var order string
+	err := berghandler.SplitAnswer(words, 1, 0, &order)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
+	}
+	be, err := h.loadOrder(he, order)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der Bestellung: "+err.Error())
 	}
@@ -295,6 +324,43 @@ func (h *BestellungHandler) getCallText(he berghandler.HandlerEssentials, evt *e
 	return berghandler.SendMessage(he, evt, handlerName, msg)
 }
 
+func (h *BestellungHandler) getTotal(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+	var order string
+	err := berghandler.SplitAnswer(words, 1, 0, &order)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
+	}
+	be, err := h.loadOrder(he, order)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der Bestellung: "+err.Error())
+	}
+	msg := be.getTotal()
+	return berghandler.SendFormattedMessage(he, evt, handlerName, msg)
+}
+
 func (h *BestellungHandler) printPayment(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
-	return true
+	var order, payeds string
+	err := berghandler.SplitAnswer(words, 1, 1, &order, &payeds)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
+	}
+	var payed float64
+	if payeds != "" {
+		p, err := strconv.ParseFloat(payeds, 64)
+		if err != nil {
+			return berghandler.SendMessage(he, evt, handlerName, "Zahlung konnte nicht konvertiert werden: "+err.Error())
+		}
+		payed = float64(p)
+	}
+	be, err := h.loadOrder(he, order)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der Bestellung: "+err.Error())
+	}
+	if payed != 0 {
+		be.Payed = payed
+	} else {
+		be.Payed = be.Total
+	}
+	msg := be.getPayment()
+	return berghandler.SendFormattedMessage(he, evt, handlerName, msg)
 }

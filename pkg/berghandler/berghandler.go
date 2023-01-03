@@ -3,6 +3,7 @@ package berghandler
 import (
 	"encoding/csv"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/Nerdbergev/Bergknecht/pkg/storage"
@@ -11,7 +12,10 @@ import (
 	"maunium.net/go/mautrix/event"
 )
 
-var commandPrefix = "!"
+var CommandPrefix = "!"
+
+const WrongArguments = "Falsche Anzahl an Argumenten, benutze %v help für Hilfe."
+const unkownCommand = "Unbekanntes Kommando, benutze %v help für Hilfe."
 
 type HandlerEssentials struct {
 	Client  *mautrix.Client
@@ -22,24 +26,77 @@ type HandlerEssentials struct {
 type BergEventHandler interface {
 	Handle(he HandlerEssentials, source mautrix.EventSource, evt *event.Event) bool
 	GetName() string
-	LoadData(he HandlerEssentials) error
+	GetCommand() string
+	Prime(he HandlerEssentials) error
+}
+
+type BergEventHandleFunction func(he HandlerEssentials, evt *event.Event, words []string) bool
+
+type SubHandlerSet struct {
+	F BergEventHandleFunction
+	H string
+}
+
+type SubHandlers map[string]SubHandlerSet
+
+func (s *SubHandlers) getAvailableCommands() string {
+	ss := *s
+	result := ""
+	for k := range ss {
+		result += (k + " ")
+	}
+	return result
+}
+
+func (s *SubHandlers) Handle(command string, handlerName string, he HandlerEssentials, evt *event.Event) bool {
+	if IsMessagewithPrefix(evt, command) {
+		m := evt.Content.AsMessage()
+		words, err := StripPrefixandGetContent(m.Body, command)
+		if err != nil {
+			return SendMessage(he, evt, handlerName, "Fehler bei decodieren der Nachricht: "+err.Error())
+		}
+		cmd := strings.ToLower(words[0])
+		newwords := RemoveWord(words, 0)
+
+		ss := *s
+
+		if strings.Compare(cmd, "help") == 0 {
+			if len(newwords) == 0 {
+				msg := "Verfügbare Kommandos sind: \n"
+				msg += s.getAvailableCommands()
+				return SendMessage(he, evt, handlerName, msg)
+			}
+			set := ss[newwords[0]]
+			f := set.F
+			if f != nil {
+				return SendMessage(he, evt, handlerName, set.H)
+			}
+		}
+		set := ss[cmd]
+		f := set.F
+		if f == nil {
+			return SendMessage(he, evt, handlerName, fmt.Sprintf(unkownCommand, CommandPrefix+command))
+		}
+		return f(he, evt, newwords)
+	}
+	return false
 }
 
 func SetCommandPrefix(prefix string) {
-	commandPrefix = prefix
+	CommandPrefix = prefix
 }
 
 func IsMessagewithPrefix(evt *event.Event, prefix string) bool {
 	result := false
 	if evt.Type == event.EventMessage {
 		m := evt.Content.AsMessage()
-		result = strings.HasPrefix(strings.ToLower(m.Body), commandPrefix+prefix)
+		result = strings.HasPrefix(strings.ToLower(m.Body), CommandPrefix+prefix)
 	}
 	return result
 }
 
 func StripPrefix(message, prefix string) string {
-	return strings.TrimPrefix(message, commandPrefix+prefix+" ")
+	return strings.TrimPrefix(message, CommandPrefix+prefix+" ")
 }
 
 func StripPrefixandGetContent(message, prefix string) ([]string, error) {
@@ -92,5 +149,3 @@ func SplitAnswer(words []string, RequiredCount, OptionalCount int, vars ...*stri
 func RemoveWord(slice []string, s int) []string {
 	return append(slice[:s], slice[s+1:]...)
 }
-
-//type BergEventHandleFunction func(he HandlerEssentials, source mautrix.EventSource, evt *event.Event) bool

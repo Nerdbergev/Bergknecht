@@ -94,7 +94,7 @@ func RunBot(conf config.Config) error {
 
 	sugar.Infow("Loading Handler Data")
 	for _, h := range handlers {
-		err := h.LoadData(he)
+		err := h.Prime(he)
 		if err != nil {
 			sugar.Errorw("Hanlder unable to load data", "handlername", h.GetName(), "error", err)
 		}
