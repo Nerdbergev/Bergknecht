@@ -69,6 +69,11 @@ func (sm *Manager) GetFile(Handlername, Filename string, persitent bool) (*os.Fi
 	return f, nil
 }
 
+func (sm *Manager) DeleteFile(Handlername, Filename string, persitent bool) error {
+	fullpath, _ := sm.getFilenameandPath(Handlername, Filename, persitent)
+	return os.Remove(fullpath)
+}
+
 func (sm *Manager) EncodeFile(Handlername, Filename string, FileType FileType, persistent bool, v interface{}) error {
 	switch FileType {
 	case TOML:

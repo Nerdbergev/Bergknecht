@@ -212,6 +212,7 @@ func (h *BestellungHandler) Prime(he berghandler.HandlerEssentials) error {
 	h.subHandlers["print-payment"] = berghandler.SubHandlerSet{F: h.printPayment, H: ""}
 	h.subHandlers["get-total"] = berghandler.SubHandlerSet{F: h.getTotal, H: ""}
 	h.subHandlers["remove"] = berghandler.SubHandlerSet{F: h.deletePosition, H: ""}
+	h.subHandlers["close"] = berghandler.SubHandlerSet{F: h.removeOrder, H: ""}
 
 	return he.Storage.DecodeFile(handlerName, "lieferdienste.toml", storage.TOML, true, h)
 }
@@ -447,4 +448,28 @@ func (h *BestellungHandler) deletePosition(he berghandler.HandlerEssentials, evt
 		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Speicerhn der bestellung: "+err.Error())
 	}
 	return berghandler.SendMessage(he, evt, handlerName, "Artikel entfernt")
+}
+
+func (h *BestellungHandler) removeOrder(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+	var order string
+	err := berghandler.SplitAnswer(words, 1, 0, &order)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
+	}
+	be, err := h.loadOrder(he, order)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der Bestellung: "+err.Error())
+	}
+	if !be.isCreator(evt.Sender.String()) {
+		return berghandler.SendMessage(he, evt, handlerName, unauthorized)
+	}
+	ex := he.Storage.DoesFileExist(handlerName, order+".toml", false)
+	if !ex {
+		return berghandler.SendMessage(he, evt, handlerName, "Bestellung nicht vorhanden")
+	}
+	err = he.Storage.DeleteFile(handlerName, order+".toml", false)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Error deleting file: "+err.Error())
+	}
+	return berghandler.SendMessage(he, evt, handlerName, "Bestellung geschlossen")
 }
