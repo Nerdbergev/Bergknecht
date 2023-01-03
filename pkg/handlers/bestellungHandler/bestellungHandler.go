@@ -203,6 +203,11 @@ func (p *Position) isBesteller(id string) bool {
 	return strings.Compare(p.Besteller[0].MatrixID, id) == 0
 }
 
+type strichlistenInfo struct {
+	Address string
+	Link    map[string]string
+}
+
 func (h *BestellungHandler) Prime(he berghandler.HandlerEssentials) error {
 	h.subHandlers = make(map[string]berghandler.SubHandlerSet)
 	h.subHandlers["new"] = berghandler.SubHandlerSet{F: h.newOrder, H: "Erstellt eine Neue Bestellung. \nUsage: new $Lieferdienst"}
@@ -213,6 +218,8 @@ func (h *BestellungHandler) Prime(he berghandler.HandlerEssentials) error {
 	h.subHandlers["get-total"] = berghandler.SubHandlerSet{F: h.getTotal, H: ""}
 	h.subHandlers["remove"] = berghandler.SubHandlerSet{F: h.deletePosition, H: ""}
 	h.subHandlers["close"] = berghandler.SubHandlerSet{F: h.removeOrder, H: ""}
+	h.subHandlers["add-strichliste"] = berghandler.SubHandlerSet{F: h.addStrichliste, H: ""}
+	h.subHandlers["remove-strichliste"] = berghandler.SubHandlerSet{F: h.removeStrichliste, H: ""}
 
 	return he.Storage.DecodeFile(handlerName, "lieferdienste.toml", storage.TOML, true, h)
 }
@@ -472,4 +479,43 @@ func (h *BestellungHandler) removeOrder(he berghandler.HandlerEssentials, evt *e
 		return berghandler.SendMessage(he, evt, handlerName, "Error deleting file: "+err.Error())
 	}
 	return berghandler.SendMessage(he, evt, handlerName, "Bestellung geschlossen")
+}
+
+func (h *BestellungHandler) addStrichliste(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+	var username string
+	err := berghandler.SplitAnswer(words, 1, 0, &username)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
+	}
+	var si strichlistenInfo
+	err = he.Storage.DecodeFile(handlerName, "strichliste.toml", storage.TOML, true, &si)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der Strichlisten Info: "+err.Error())
+	}
+	if si.Link == nil {
+		si.Link = make(map[string]string)
+	}
+	si.Link[evt.Sender.String()] = username
+	err = he.Storage.EncodeFile(handlerName, "strichliste.toml", storage.TOML, true, si)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim speichern der Strichlisten Info: "+err.Error())
+	}
+	return berghandler.SendMessage(he, evt, handlerName, "Link hinzugefügt")
+}
+
+func (h *BestellungHandler) removeStrichliste(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+	var si strichlistenInfo
+	err := he.Storage.DecodeFile(handlerName, "strichliste.toml", storage.TOML, true, &si)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der Strichlisten Info: "+err.Error())
+	}
+	if si.Link == nil {
+		si.Link = make(map[string]string)
+	}
+	delete(si.Link, evt.Sender.String())
+	err = he.Storage.EncodeFile(handlerName, "strichliste.toml", storage.TOML, true, si)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim speichern der Strichlisten Info: "+err.Error())
+	}
+	return berghandler.SendMessage(he, evt, handlerName, "Link entfernt")
 }
