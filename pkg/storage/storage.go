@@ -59,10 +59,19 @@ func (sm *Manager) DoesFileExist(Handlername, Filename string, persitent bool) b
 	}
 }
 
-func (sm *Manager) GetFile(Handlername, Filename string, persitent bool) (*os.File, error) {
+func (sm *Manager) GetFileWriting(Handlername, Filename string, persitent bool) (*os.File, error) {
 	fullpath, path := sm.getFilenameandPath(Handlername, Filename, persitent)
 	os.MkdirAll(path, os.ModePerm)
-	f, err := os.OpenFile(fullpath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+	f, err := os.Create(fullpath)
+	if err != nil {
+		return nil, errors.New("Error opening or creating file: " + err.Error())
+	}
+	return f, nil
+}
+
+func (sm *Manager) GetFileReading(Handlername, Filename string, persitent bool) (*os.File, error) {
+	fullpath, _ := sm.getFilenameandPath(Handlername, Filename, persitent)
+	f, err := os.Open(fullpath)
 	if err != nil {
 		return nil, errors.New("Error opening or creating file: " + err.Error())
 	}
@@ -85,7 +94,7 @@ func (sm *Manager) EncodeFile(Handlername, Filename string, FileType FileType, p
 }
 
 func (sm *Manager) encodeTOMLFile(Handlername, Filename string, persistent bool, v interface{}) error {
-	f, err := sm.GetFile(Handlername, Filename, persistent)
+	f, err := sm.GetFileWriting(Handlername, Filename, persistent)
 	if err != nil {
 		return errors.New("Error loading opening file: " + err.Error())
 	}
@@ -99,7 +108,7 @@ func (sm *Manager) encodeTOMLFile(Handlername, Filename string, persistent bool,
 }
 
 func (sm *Manager) encodeJSONFile(Handlername, Filename string, persistent bool, v interface{}) error {
-	f, err := sm.GetFile(Handlername, Filename, persistent)
+	f, err := sm.GetFileWriting(Handlername, Filename, persistent)
 	if err != nil {
 		return errors.New("Error loading opening file: " + err.Error())
 	}
@@ -123,7 +132,7 @@ func (sm *Manager) DecodeFile(Handlername, Filename string, FileType FileType, p
 }
 
 func (sm *Manager) decodeTOMLFile(Handlername, Filename string, persistent bool, v interface{}) error {
-	f, err := sm.GetFile(Handlername, Filename, persistent)
+	f, err := sm.GetFileReading(Handlername, Filename, persistent)
 	if err != nil {
 		return errors.New("Error loading opening file: " + err.Error())
 	}
@@ -137,7 +146,7 @@ func (sm *Manager) decodeTOMLFile(Handlername, Filename string, persistent bool,
 }
 
 func (sm *Manager) decodeJSONFile(Handlername, Filename string, persistent bool, v interface{}) error {
-	f, err := sm.GetFile(Handlername, Filename, persistent)
+	f, err := sm.GetFileReading(Handlername, Filename, persistent)
 	if err != nil {
 		return errors.New("Error loading opening file: " + err.Error())
 	}

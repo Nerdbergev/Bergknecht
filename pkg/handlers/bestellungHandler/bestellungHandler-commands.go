@@ -1,10 +1,18 @@
 package bestellungHandler
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"math"
+	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/Nerdbergev/Bergknecht/pkg/berghandler"
 	"github.com/Nerdbergev/Bergknecht/pkg/storage"
@@ -29,6 +37,7 @@ func (h *BestellungHandler) Prime(he berghandler.HandlerEssentials) error {
 	h.subHandlers["close"] = berghandler.SubHandlerSet{F: h.removeOrder, H: ""}
 	h.subHandlers["add-strichliste"] = berghandler.SubHandlerSet{F: h.addStrichliste, H: ""}
 	h.subHandlers["remove-strichliste"] = berghandler.SubHandlerSet{F: h.removeStrichliste, H: ""}
+	h.subHandlers["process-strichliste"] = berghandler.SubHandlerSet{F: h.processStrichliste, H: ""}
 
 	return he.Storage.DecodeFile(handlerName, "lieferdienste.toml", storage.TOML, true, h)
 }
@@ -75,6 +84,7 @@ func (h *BestellungHandler) newOrder(he berghandler.HandlerEssentials, evt *even
 	bnf := bn + ".toml"
 
 	be := Bestellung{}
+	be.Datum = time.Now()
 	be.Ersteller = User{evt.Sender.Localpart(), evt.Sender.String()}
 	be.LieferDienst = ld
 	be.Nummer = l.Telefonnummer
@@ -250,7 +260,7 @@ func (h *BestellungHandler) deletePosition(he berghandler.HandlerEssentials, evt
 	if (posi >= len(be.Positionen)) || (posi < 0) {
 		return berghandler.SendMessage(he, evt, handlerName, "Position nicht vorhanden")
 	}
-	if (!be.isCreator(evt.Sender.String())) || (!be.Positionen[posi].isBesteller(evt.Sender.String())) {
+	if (!be.isCreator(evt.Sender.String())) && (!be.Positionen[posi].isBesteller(evt.Sender.String())) {
 		return berghandler.SendMessage(he, evt, handlerName, unauthorized)
 	}
 	be.removePosition(posi)
@@ -286,6 +296,66 @@ func (h *BestellungHandler) removeOrder(he berghandler.HandlerEssentials, evt *e
 	return berghandler.SendMessage(he, evt, handlerName, "Bestellung geschlossen")
 }
 
+func execHTTPRequest(URL string, method string, in io.Reader, v interface{}) error {
+	ctx, cncl := context.WithTimeout(context.Background(), time.Second*5)
+	defer cncl()
+
+	req, err := http.NewRequestWithContext(ctx, method, URL, in)
+	if err != nil {
+		return errors.New("Fehler beim Request erstellen: " + err.Error())
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return errors.New("Fehler beim Request ausführen: " + err.Error())
+	}
+
+	if v != nil {
+		decoder := json.NewDecoder(resp.Body)
+		err = decoder.Decode(v)
+		if err != nil {
+			return errors.New("keine decodierung möglich: " + err.Error())
+		}
+	}
+	return nil
+}
+
+func getStrichlistenID(address, name string) (int, error) {
+
+	url := fmt.Sprintf(address+"/api/user/search?query=%v", name)
+
+	var userResponse siUserResponse
+	err := execHTTPRequest(url, http.MethodGet, nil, &userResponse)
+	if err != nil {
+		return -1, err
+	}
+
+	var siUser siUser
+
+	switch userResponse.Count {
+	case 0:
+		return -1, errors.New("keinen Strichlisten Benutzer gefunden")
+	case 1:
+		siUser = userResponse.SiUsers[0]
+	default:
+		found := false
+		for _, u := range userResponse.SiUsers {
+			if strings.Compare(strings.ToLower(name), strings.ToLower(u.Name)) == 0 {
+				found = true
+				siUser = u
+				break
+			}
+		}
+		if !found {
+			return -1, errors.New("keine exakte übereinstimmung gefunden. Bitte Name prüfen")
+		}
+	}
+	if siUser.IsDisabled {
+		return -1, errors.New("benutzer disabled")
+	}
+	return siUser.ID, nil
+}
+
 func (h *BestellungHandler) addStrichliste(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
 	var username string
 	err := berghandler.SplitAnswer(words, 1, 0, &username)
@@ -298,9 +368,13 @@ func (h *BestellungHandler) addStrichliste(he berghandler.HandlerEssentials, evt
 		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der Strichlisten Info: "+err.Error())
 	}
 	if si.Link == nil {
-		si.Link = make(map[string]string)
+		si.Link = make(map[string]int)
 	}
-	si.Link[evt.Sender.String()] = username
+	id, err := getStrichlistenID(si.Address, username)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim finden des Strichlisten Users: "+err.Error())
+	}
+	si.Link[evt.Sender.String()] = id
 	err = he.Storage.EncodeFile(handlerName, "strichliste.toml", storage.TOML, true, si)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim speichern der Strichlisten Info: "+err.Error())
@@ -315,7 +389,7 @@ func (h *BestellungHandler) removeStrichliste(he berghandler.HandlerEssentials, 
 		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der Strichlisten Info: "+err.Error())
 	}
 	if si.Link == nil {
-		si.Link = make(map[string]string)
+		si.Link = make(map[string]int)
 	}
 	delete(si.Link, evt.Sender.String())
 	err = he.Storage.EncodeFile(handlerName, "strichliste.toml", storage.TOML, true, si)
@@ -323,4 +397,85 @@ func (h *BestellungHandler) removeStrichliste(he berghandler.HandlerEssentials, 
 		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim speichern der Strichlisten Info: "+err.Error())
 	}
 	return berghandler.SendMessage(he, evt, handlerName, "Link entfernt")
+}
+
+func writePaymentResult(wg *sync.WaitGroup, ses *safeExecStatus, payee User, result string) {
+	ses.mu.Lock()
+	ses.es[payee] = result
+	ses.mu.Unlock()
+	wg.Done()
+}
+
+func (h *BestellungHandler) doPayment(payer int, p paymentInfo, comment string, si strichlistenInfo, wg *sync.WaitGroup, ses *safeExecStatus) {
+	siID, ex := si.Link[p.Payee.MatrixID]
+	if !ex {
+		writePaymentResult(wg, ses, p.Payee, "Keinen Strichlisten Benutzer gefunden")
+		return
+	}
+
+	url := fmt.Sprintf(si.Address+"/api/user/%v", siID)
+
+	var userResponse siUser
+	err := execHTTPRequest(url, http.MethodGet, nil, &userResponse)
+	if err != nil {
+		writePaymentResult(wg, ses, p.Payee, "Fehler beim User Request:"+err.Error())
+		return
+	}
+
+	if userResponse.IsDisabled {
+		writePaymentResult(wg, ses, p.Payee, "Benutzer disabled")
+		return
+	}
+
+	t := siTransaction{Amount: int(math.Ceil(p.Amount * 100)), Comment: comment, RecipientID: payer}
+	to := siTransactionOJ{}
+
+	b := new(bytes.Buffer)
+	encoder := json.NewEncoder(b)
+	encoder.Encode(t)
+
+	url = fmt.Sprintf(si.Address+"/api/user/%v/transaction", siID)
+	err = execHTTPRequest(url, http.MethodPost, b, &to)
+	if err != nil {
+		writePaymentResult(wg, ses, p.Payee, "Fehler beim User Request:"+err.Error())
+		return
+	}
+
+	writePaymentResult(wg, ses, p.Payee, fmt.Sprintf("Transaction mit der ID %v angelegt", to.ID))
+}
+
+func (h *BestellungHandler) processStrichliste(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+	var order string
+	var payer string
+	err := berghandler.SplitAnswer(words, 2, 0, &order, &payer)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
+	}
+	be, err := h.loadOrder(he, order)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der Bestellung: "+err.Error())
+	}
+	if !be.isCreator(evt.Sender.String()) {
+		return berghandler.SendMessage(he, evt, handlerName, unauthorized)
+	}
+	var si strichlistenInfo
+	err = he.Storage.DecodeFile(handlerName, "strichliste.toml", storage.TOML, true, &si)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der Strichlisten Info: "+err.Error())
+	}
+	siPayer, ex := si.Link[payer]
+	if !ex {
+		return berghandler.SendMessage(he, evt, handlerName, "Zahlender hat keine Strichliste verlinkt")
+	}
+	var wg sync.WaitGroup
+	ses := safeExecStatus{es: make(map[User]string)}
+	pi, _ := be.calcPayment()
+	t := be.Datum.Format(time.RFC3339)
+	c := fmt.Sprintf("Bestellung bei %v am %v", be.LieferDienst, t)
+	wg.Add(len(pi))
+	for _, p := range pi {
+		go h.doPayment(siPayer, p, c, si, &wg, &ses)
+	}
+	wg.Wait()
+	return true
 }

@@ -24,7 +24,7 @@ func (h EchoHandler) Handle(he berghandler.HandlerEssentials, source mautrix.Eve
 			he.Logger.Errorw("Error sending Message", "Handler", handlerName, "Error", err)
 			return false
 		}
-		f, err := he.Storage.GetFile(h.GetName(), "log.txt", true)
+		f, err := he.Storage.GetFileWriting(h.GetName(), "log.txt", true)
 		if err != nil {
 			he.Logger.Errorw("Error storing Message", "Handler", handlerName, "Error", err)
 			return false

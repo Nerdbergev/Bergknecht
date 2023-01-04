@@ -5,6 +5,8 @@ import (
 	"math"
 	"math/rand"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/jedib0t/go-pretty/v6/table"
 )
@@ -42,6 +44,7 @@ type Version struct {
 
 type Bestellung struct {
 	Ersteller    User
+	Datum        time.Time
 	LieferDienst string
 	Nummer       string
 	Positionen   []Position
@@ -198,5 +201,31 @@ func (p *Position) isBesteller(id string) bool {
 
 type strichlistenInfo struct {
 	Address string
-	Link    map[string]string
+	Link    map[string]int
+}
+
+type safeExecStatus struct {
+	mu sync.RWMutex
+	es map[User]string
+}
+
+type siUser struct {
+	ID         int    `json:"id"`
+	Name       string `json:"name"`
+	IsDisabled bool   `json:"isDisabled"`
+}
+
+type siUserResponse struct {
+	Count   int      `json:"count"`
+	SiUsers []siUser `json:"users"`
+}
+
+type siTransaction struct {
+	Amount      int    `json:"amount"`
+	RecipientID int    `json:"recipientId"`
+	Comment     string `json:"comment"`
+}
+
+type siTransactionOJ struct {
+	ID int `json:"id"`
 }
