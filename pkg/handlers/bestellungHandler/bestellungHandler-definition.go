@@ -27,6 +27,7 @@ type User struct {
 
 type LieferDienst struct {
 	Name          string
+	ID            string
 	Telefonnummer string
 	Artikel       []Artikel
 }
@@ -34,11 +35,14 @@ type LieferDienst struct {
 type Artikel struct {
 	Nummer    string
 	Name      string
-	Versionen []Version
+	ID        string
+	Versionen []Zusatz
+	Extras    []Zusatz
 }
 
-type Version struct {
+type Zusatz struct {
 	Name  string
+	ID    string
 	Preis float64
 }
 
@@ -62,9 +66,9 @@ func (b *Bestellung) prettyFormat() string {
 	t := table.NewWriter()
 	t.SetStyle(table.StyleColoredDark)
 	t.SetTitle("Bestellung bei " + b.LieferDienst)
-	t.AppendHeader(table.Row{"#", "Nummer", "Name", "Version", "Anzahl", "Kommentar", "Besteller"})
+	t.AppendHeader(table.Row{"#", "Nummer", "Name", "Version", "Anzahl", "Extras", "Kommentar", "Besteller"})
 	for i, p := range b.Positionen {
-		t.AppendRow(table.Row{i, p.ArtikelNummer, p.ArtikelName, p.Version, p.Anzahl, p.Kommentar, p.Besteller[0].DisplayName})
+		t.AppendRow(table.Row{i, p.ArtikelNummer, p.ArtikelName, p.Version, p.Anzahl, p.Extras, p.Kommentar, p.Besteller[0].DisplayName})
 	}
 	return t.RenderHTML()
 }
@@ -90,9 +94,9 @@ func (b *Bestellung) getCallText() string {
 	result = result + "Hallo Nord mein Name ich würde gerne Bestellen und zwar: \n"
 	for _, p := range newbestellung.Positionen {
 		if p.ArtikelNummer != "" {
-			result = result + fmt.Sprintf("%v mal die Nummer %v %v in %v %v\n", p.Anzahl, p.ArtikelNummer, p.ArtikelName, p.Version, p.Kommentar)
+			result = result + fmt.Sprintf("%v mal die Nummer %v %v in %v mit %v %v\n", p.Anzahl, p.ArtikelNummer, p.ArtikelName, p.Version, p.Extras, p.Kommentar)
 		} else {
-			result = result + fmt.Sprintf("%v mal %v in %v %v\n", p.Anzahl, p.ArtikelName, p.Version, p.Kommentar)
+			result = result + fmt.Sprintf("%v mal %v in %v mit %v %v\n", p.Anzahl, p.ArtikelName, p.Version, p.Extras, p.Kommentar)
 		}
 	}
 	return result
@@ -161,9 +165,7 @@ func (b *Bestellung) getPayment() string {
 	t.AppendHeader(table.Row{"Rabatt", off})
 	t.AppendHeader(table.Row{"Name", "Schulden"})
 	for _, p := range pi {
-		if p.Payee != b.Ersteller {
-			t.AppendRow(table.Row{p.Payee.DisplayName, p.Amount})
-		}
+		t.AppendRow(table.Row{p.Payee.DisplayName, p.Amount})
 	}
 	return t.RenderHTML()
 }
@@ -176,6 +178,7 @@ type Position struct {
 	ArtikelNummer string
 	ArtikelName   string
 	Version       string
+	Extras        string
 	Einzelpreis   float64
 	Anzahl        int
 	Besteller     []User
@@ -187,6 +190,7 @@ func (p *Position) isSameAs(p2 Position) bool {
 	result = result && (p.ArtikelName == p2.ArtikelName)
 	result = result && (p.ArtikelNummer == p2.ArtikelNummer)
 	result = result && (p.Version == p2.Version)
+	result = result && (p.Extras == p2.Extras)
 	result = result && (p.Kommentar == p2.Kommentar)
 	return result
 }

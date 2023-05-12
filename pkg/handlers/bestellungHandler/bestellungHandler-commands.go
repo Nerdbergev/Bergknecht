@@ -3,6 +3,7 @@ package bestellungHandler
 import (
 	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/Nerdbergev/Bergknecht/pkg/berghandler"
 	"github.com/Nerdbergev/Bergknecht/pkg/storage"
+	"github.com/jedib0t/go-pretty/v6/table"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 )
@@ -96,9 +98,44 @@ func (h *BestellungHandler) newOrder(he berghandler.HandlerEssentials, evt *even
 	return berghandler.SendMessage(he, evt, handlerName, "Neue Bestellung mit dem Name: "+bn+" erstellt")
 }
 
+func parseExtras(extras string, artikel Artikel) ([]Zusatz, error) {
+	var result []Zusatz
+	if extras == "" {
+		return result, nil
+	}
+	r := csv.NewReader(strings.NewReader(extras))
+	r.Comma = ','
+	read, err := r.Read()
+	if err != nil {
+		return result, errors.New("Fehler beim lesen der Extras: " + err.Error())
+	}
+	for _, r := range read {
+		cont := false
+		for _, e := range artikel.Extras {
+			if strings.Compare(strings.ToLower(r), e.Name) == 0 {
+				result = append(result, e)
+				cont = true
+				break
+			}
+		}
+		if !cont {
+			return result, errors.New("Konnte Zusatz " + r + " nicht zuordnen")
+		}
+	}
+	return result, nil
+}
+
+func getExtrasTotal(zusätze []Zusatz) float64 {
+	result := 0.0
+	for _, z := range zusätze {
+		result += z.Preis
+	}
+	return result
+}
+
 func (h *BestellungHandler) addtoOrder(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
-	var order, artikel, version, kommentar, anzahl string
-	err := berghandler.SplitAnswer(words, 2, 3, &order, &artikel, &version, &kommentar, &anzahl)
+	var order, artikel, version, extras, kommentar, anzahl string
+	err := berghandler.SplitAnswer(words, 2, 4, &order, &artikel, &version, &extras, &kommentar, &anzahl)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
 	}
@@ -141,12 +178,18 @@ func (h *BestellungHandler) addtoOrder(he berghandler.HandlerEssentials, evt *ev
 			}
 		}
 	}
+	desiredExtras, err := parseExtras(extras, desiredArtikel)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim parsen der extras:"+err.Error()+" Benutze !bestellung $Lieferdienst artikel für eine Liste")
+	}
+
 	orderedby := User{evt.Sender.Localpart(), evt.Sender.String()}
 	posi := Position{}
 	posi.ArtikelNummer = desiredArtikel.Nummer
 	posi.ArtikelName = desiredArtikel.Name
 	posi.Version = desiredVersion.Name
-	posi.Einzelpreis = desiredVersion.Preis
+	posi.Extras = extras
+	posi.Einzelpreis = desiredVersion.Preis + getExtrasTotal(desiredExtras)
 	posi.Besteller = append(posi.Besteller, orderedby)
 	posi.Anzahl = amount
 	posi.Kommentar = kommentar
@@ -154,7 +197,7 @@ func (h *BestellungHandler) addtoOrder(he berghandler.HandlerEssentials, evt *ev
 	be.calcTotal()
 	err = he.Storage.EncodeFile(handlerName, order+".toml", storage.TOML, false, be)
 	if err != nil {
-		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Speicerhn der bestellung: "+err.Error())
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Speichern der bestellung: "+err.Error())
 	}
 	return berghandler.SendMessage(he, evt, handlerName, "Artikel hinzugefügt")
 }
@@ -237,6 +280,10 @@ func (h *BestellungHandler) printPayment(he berghandler.HandlerEssentials, evt *
 	} else {
 		be.Payed = be.Total
 	}
+	err = he.Storage.EncodeFile(handlerName, order+".toml", storage.TOML, false, be)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Speichern der bestellung: "+err.Error())
+	}
 	msg := be.getPayment()
 	return berghandler.SendFormattedMessage(he, evt, handlerName, msg)
 }
@@ -314,6 +361,8 @@ func execHTTPRequest(URL string, method string, in io.Reader, v interface{}) err
 		decoder := json.NewDecoder(resp.Body)
 		err = decoder.Decode(v)
 		if err != nil {
+			data, _ := io.ReadAll(resp.Body)
+			fmt.Println(string(data))
 			return errors.New("keine decodierung möglich: " + err.Error())
 		}
 	}
@@ -413,6 +462,11 @@ func (h *BestellungHandler) doPayment(payer int, p paymentInfo, comment string, 
 		return
 	}
 
+	if payer == siID {
+		writePaymentResult(wg, ses, p.Payee, "Benutzer hat bei Lieferdienst bezahlt")
+		return
+	}
+
 	url := fmt.Sprintf(si.Address+"/api/user/%v", siID)
 
 	var userResponse siUser
@@ -437,7 +491,7 @@ func (h *BestellungHandler) doPayment(payer int, p paymentInfo, comment string, 
 	url = fmt.Sprintf(si.Address+"/api/user/%v/transaction", siID)
 	err = execHTTPRequest(url, http.MethodPost, b, &to)
 	if err != nil {
-		writePaymentResult(wg, ses, p.Payee, "Fehler beim User Request:"+err.Error())
+		writePaymentResult(wg, ses, p.Payee, "Fehler beim Transaction Request:"+err.Error())
 		return
 	}
 
@@ -447,7 +501,7 @@ func (h *BestellungHandler) doPayment(payer int, p paymentInfo, comment string, 
 func (h *BestellungHandler) processStrichliste(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
 	var order string
 	var payer string
-	err := berghandler.SplitAnswer(words, 2, 0, &order, &payer)
+	err := berghandler.SplitAnswer(words, 1, 1, &order, &payer)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
 	}
@@ -458,10 +512,16 @@ func (h *BestellungHandler) processStrichliste(he berghandler.HandlerEssentials,
 	if !be.isCreator(evt.Sender.String()) {
 		return berghandler.SendMessage(he, evt, handlerName, unauthorized)
 	}
+	if be.Payed == 0 {
+		return berghandler.SendMessage(he, evt, handlerName, "Bestellung hat noch keinen gezahlten Geldwert")
+	}
 	var si strichlistenInfo
 	err = he.Storage.DecodeFile(handlerName, "strichliste.toml", storage.TOML, true, &si)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim Laden der Strichlisten Info: "+err.Error())
+	}
+	if payer == "" {
+		payer = be.Ersteller.MatrixID
 	}
 	siPayer, ex := si.Link[payer]
 	if !ex {
@@ -470,12 +530,19 @@ func (h *BestellungHandler) processStrichliste(he berghandler.HandlerEssentials,
 	var wg sync.WaitGroup
 	ses := safeExecStatus{es: make(map[User]string)}
 	pi, _ := be.calcPayment()
-	t := be.Datum.Format(time.RFC3339)
-	c := fmt.Sprintf("Bestellung bei %v am %v", be.LieferDienst, t)
+	ti := be.Datum.Format(time.RFC3339)
+	c := fmt.Sprintf("Bestellung bei %v am %v", be.LieferDienst, ti)
 	wg.Add(len(pi))
 	for _, p := range pi {
 		go h.doPayment(siPayer, p, c, si, &wg, &ses)
 	}
 	wg.Wait()
-	return true
+	t := table.NewWriter()
+	t.SetStyle(table.StyleColoredDark)
+	t.SetTitle("Bestellung bei " + be.LieferDienst + " Strichlisten Abrechnung")
+	t.AppendHeader(table.Row{"Name", "Ergebnis"})
+	for p, r := range ses.es {
+		t.AppendRow(table.Row{p.MatrixID, r})
+	}
+	return berghandler.SendFormattedMessage(he, evt, handlerName, t.RenderHTML())
 }
