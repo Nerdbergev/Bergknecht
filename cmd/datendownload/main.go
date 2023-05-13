@@ -401,7 +401,6 @@ func main() {
 			if err != nil {
 				log.Fatal("Error getting menu:", err.Error())
 			}
-			fmt.Println(ld)
 			tf.Lieferdienste = append(tf.Lieferdienste, ld)
 		}
 		f, err := os.Create("lieferdienste.toml")
