@@ -32,12 +32,39 @@ type LieferDienst struct {
 	Artikel       []Artikel
 }
 
+func (ld *LieferDienst) prettyFormat() string {
+	t := table.NewWriter()
+	t.SetStyle(table.StyleColoredDark)
+	t.SetTitle("Menü von " + ld.Name)
+	t.AppendHeader(table.Row{"#", "Artikel Nummer", "Artikel Name"})
+	for i, a := range ld.Artikel {
+		t.AppendRow(table.Row{i, a.Nummer, a.Name})
+	}
+	return t.RenderHTML()
+}
+
 type Artikel struct {
 	Nummer    string
 	Name      string
 	ID        string
 	Versionen []Zusatz
 	Extras    []Zusatz
+}
+
+func (a *Artikel) prettyFormat() string {
+	t := table.NewWriter()
+	t.SetStyle(table.StyleColoredDark)
+	t.SetTitle("Versionen und Extras von " + a.Name)
+	t.AppendHeader(table.Row{"#", "Version/Extra", "Preis"})
+	t.AppendRow(table.Row{"", "Versionen"})
+	for i, v := range a.Versionen {
+		t.AppendRow(table.Row{i, v.Name, v.Preis})
+	}
+	t.AppendRow(table.Row{"", "Extras"})
+	for i, e := range a.Extras {
+		t.AppendRow(table.Row{i, e.Name, e.Preis})
+	}
+	return t.RenderHTML()
 }
 
 type Zusatz struct {

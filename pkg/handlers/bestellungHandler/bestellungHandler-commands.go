@@ -29,17 +29,20 @@ type BestellungHandler struct {
 
 func (h *BestellungHandler) Prime(he berghandler.HandlerEssentials) error {
 	h.subHandlers = make(map[string]berghandler.SubHandlerSet)
-	h.subHandlers["new"] = berghandler.SubHandlerSet{F: h.newOrder, H: "Erstellt eine Neue Bestellung. \nUsage: new $Lieferdienst"}
-	h.subHandlers["add"] = berghandler.SubHandlerSet{F: h.addtoOrder, H: ""}
-	h.subHandlers["show"] = berghandler.SubHandlerSet{F: h.printOrder, H: ""}
-	h.subHandlers["call-text"] = berghandler.SubHandlerSet{F: h.getCallText, H: ""}
-	h.subHandlers["print-payment"] = berghandler.SubHandlerSet{F: h.printPayment, H: ""}
-	h.subHandlers["get-total"] = berghandler.SubHandlerSet{F: h.getTotal, H: ""}
-	h.subHandlers["remove"] = berghandler.SubHandlerSet{F: h.deletePosition, H: ""}
-	h.subHandlers["close"] = berghandler.SubHandlerSet{F: h.removeOrder, H: ""}
-	h.subHandlers["add-strichliste"] = berghandler.SubHandlerSet{F: h.addStrichliste, H: ""}
-	h.subHandlers["remove-strichliste"] = berghandler.SubHandlerSet{F: h.removeStrichliste, H: ""}
-	h.subHandlers["process-strichliste"] = berghandler.SubHandlerSet{F: h.processStrichliste, H: ""}
+	h.subHandlers["new"] = berghandler.SubHandlerSet{F: h.newOrder, H: "Erstellt eine Neue Bestellung.", U: "new $Lieferdienst"}
+	h.subHandlers["add"] = berghandler.SubHandlerSet{F: h.addtoOrder, H: "Hinzufügen eines Items zur Bestellung", U: "add $Bestellung $Artikel [$Version $Extras $Kommentar $Anzahl]"}
+	h.subHandlers["show"] = berghandler.SubHandlerSet{F: h.printOrder, H: "Anzeigen einer Bestellung", U: "show $Bestellung"}
+	h.subHandlers["call-text"] = berghandler.SubHandlerSet{F: h.getCallText, H: "Ausgabe einen Textes zum Anrufen", U: "call-text $Bestellung"}
+	h.subHandlers["print-payment"] = berghandler.SubHandlerSet{F: h.printPayment, H: "Ausgabe der Informationen wer was bezahlen muss", U: "print-payment $Bestellung [$Gezahlt]"}
+	h.subHandlers["get-total"] = berghandler.SubHandlerSet{F: h.getTotal, H: "Ausgabe wie viel die Bestellung kostet plus Trinkgeld Vorschläge", U: "get-total $Bestellung"}
+	h.subHandlers["remove"] = berghandler.SubHandlerSet{F: h.deletePosition, H: "Löscht Position aus der Bestellung", U: "remove $Bestellung $Position"}
+	h.subHandlers["close"] = berghandler.SubHandlerSet{F: h.removeOrder, H: "Schließt Bestellung und Löscht diese", U: "close $Bestellung"}
+	h.subHandlers["add-strichliste"] = berghandler.SubHandlerSet{F: h.addStrichliste, H: "Verknüpft den schreibenden Matrix account mit einem Strichlisten Benutzer", U: "add-strichliste $Benutzername"}
+	h.subHandlers["remove-strichliste"] = berghandler.SubHandlerSet{F: h.removeStrichliste, H: "Löscht Matrix account zu Strichlisten account verknüpfung", U: "remove-strichliste $Benutzername"}
+	h.subHandlers["process-strichliste"] = berghandler.SubHandlerSet{F: h.processStrichliste, H: "Versucht Bestellung via Strichliste abzurechenen", U: "process-strichliste $Bestellung [$Bezahlendendes-Wesen]"}
+	h.subHandlers["menu"] = berghandler.SubHandlerSet{F: h.showMenu, H: "Zeigt Menü eines Lieferdienstes", U: "menu $Lieferdienst"}
+	h.subHandlers["article"] = berghandler.SubHandlerSet{F: h.showArticle, H: "Zeigt Artikelinformationen", U: "article $Lieferdienst $Article"}
+	h.subHandlers["restaurants"] = berghandler.SubHandlerSet{F: h.showRestaurants, H: "Zeigt alle Lieferdienste", U: "restaurants"}
 
 	return he.Storage.DecodeFile(handlerName, "lieferdienste.toml", storage.TOML, true, h)
 }
@@ -165,7 +168,7 @@ func (h *BestellungHandler) addtoOrder(he berghandler.HandlerEssentials, evt *ev
 		}
 	}
 	if !ex {
-		return berghandler.SendMessage(he, evt, handlerName, "Artikel nicht gefunden, benutze !bestellung $Lieferdienst artikel für eine Liste")
+		return berghandler.SendMessage(he, evt, handlerName, "Artikel nicht gefunden, benutze !bestellung article $Lieferdienst für eine Liste")
 	}
 	desiredVersion := desiredArtikel.Versionen[0]
 	if len(desiredArtikel.Versionen) > 1 {
@@ -180,7 +183,7 @@ func (h *BestellungHandler) addtoOrder(he berghandler.HandlerEssentials, evt *ev
 	}
 	desiredExtras, err := parseExtras(extras, desiredArtikel)
 	if err != nil {
-		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim parsen der extras:"+err.Error()+" Benutze !bestellung $Lieferdienst artikel für eine Liste")
+		return berghandler.SendMessage(he, evt, handlerName, "Fehler beim parsen der extras:"+err.Error()+" Benutze !bestellung article $Lieferdienst für eine Liste")
 	}
 
 	orderedby := User{evt.Sender.Localpart(), evt.Sender.String()}
@@ -545,4 +548,59 @@ func (h *BestellungHandler) processStrichliste(he berghandler.HandlerEssentials,
 		t.AppendRow(table.Row{p.MatrixID, r})
 	}
 	return berghandler.SendFormattedMessage(he, evt, handlerName, t.RenderHTML())
+}
+
+func (h *BestellungHandler) showMenu(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+	var ld string
+	err := berghandler.SplitAnswer(words, 1, 0, &ld)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
+	}
+	found, l := h.searchLieferdienst(ld)
+	if !found {
+		return berghandler.SendMessage(he, evt, handlerName, "Lieferdienst nicht gefunden, benutze !bestellung dienste für eine Liste")
+	}
+	return berghandler.SendFormattedMessage(he, evt, handlerName, l.prettyFormat())
+}
+
+func (h *BestellungHandler) showArticle(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+	var ld, artikel string
+	err := berghandler.SplitAnswer(words, 2, 0, &ld, &artikel)
+	if err != nil {
+		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
+	}
+	found, l := h.searchLieferdienst(ld)
+	if !found {
+		return berghandler.SendMessage(he, evt, handlerName, "Lieferdienst nicht gefunden, benutze !bestellung dienste für eine Liste")
+	}
+
+	ex := false
+	var desiredArtikel Artikel
+	for _, a := range l.Artikel {
+		if (strings.Compare(artikel, strings.ToLower(a.Name)) == 0) || (strings.Compare(artikel, strings.ToLower(a.Nummer)) == 0) {
+			ex = true
+			desiredArtikel = a
+			break
+		}
+	}
+	if !ex {
+		return berghandler.SendMessage(he, evt, handlerName, "Artikel nicht gefunden, benutze !bestellung menu $Lieferdienst für eine Liste")
+	}
+
+	return berghandler.SendFormattedMessage(he, evt, handlerName, desiredArtikel.prettyFormat())
+}
+
+func (h *BestellungHandler) prettyFormatRestaurants() string {
+	t := table.NewWriter()
+	t.SetStyle(table.StyleColoredDark)
+	t.SetTitle("Lieferdienste")
+	t.AppendHeader(table.Row{"#", "Name", "Telefonnummer"})
+	for i, l := range h.Lieferdienste {
+		t.AppendRow(table.Row{i, l.Name, l.Telefonnummer})
+	}
+	return t.RenderHTML()
+}
+
+func (h *BestellungHandler) showRestaurants(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+	return berghandler.SendFormattedMessage(he, evt, handlerName, h.prettyFormatRestaurants())
 }

@@ -320,7 +320,7 @@ func seperateProductNameAndSize(product string) (string, string) {
 	if len(rs) > 1 {
 		fmt.Println(rs[1])
 		rs2 := rgx.ReplaceAll([]byte(product), []byte(""))
-		return string(rs2), rs[1]
+		return strings.TrimSpace(string(rs2)), rs[1]
 	} else {
 		return product, "default"
 	}
@@ -348,7 +348,7 @@ func queryMenu(r string) (bestellungHandler.LieferDienst, error) {
 			art.Versionen = append(art.Versionen, bestellungHandler.Zusatz{Name: version, Preis: price})
 			for _, sz := range prd.Sizes.Items {
 				_, version := seperateProductNameAndSize(sz.Name)
-				price, err := strconv.ParseFloat(prd.Price, 64)
+				price, err := strconv.ParseFloat(sz.Price, 64)
 				if err != nil {
 					log.Fatal("Couldn't convert price on Size")
 				}
@@ -356,7 +356,7 @@ func queryMenu(r string) (bestellungHandler.LieferDienst, error) {
 			}
 			for _, xtrMenu := range prd.Extras.Items {
 				for _, opts := range xtrMenu.Options.Items {
-					price, err := strconv.ParseFloat(prd.Price, 64)
+					price, err := strconv.ParseFloat(opts.Price, 64)
 					if err != nil {
 						log.Fatal("Couldn't convert price on Extra")
 					}

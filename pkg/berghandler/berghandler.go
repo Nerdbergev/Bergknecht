@@ -35,6 +35,7 @@ type BergEventHandleFunction func(he HandlerEssentials, evt *event.Event, words 
 type SubHandlerSet struct {
 	F BergEventHandleFunction
 	H string
+	U string
 }
 
 type SubHandlers map[string]SubHandlerSet
@@ -69,7 +70,7 @@ func (s *SubHandlers) Handle(command string, handlerName string, he HandlerEssen
 			set := ss[newwords[0]]
 			f := set.F
 			if f != nil {
-				return SendMessage(he, evt, handlerName, set.H)
+				return SendMessage(he, evt, handlerName, set.H+"\nUsage: !"+command+" "+set.U)
 			}
 		}
 		set := ss[cmd]
