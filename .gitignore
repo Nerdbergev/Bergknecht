@@ -4,6 +4,8 @@
 *.dll
 *.so
 *.dylib
+cmd/bergknecht/bergknecht
+cmd/datendownload/datendownload
 
 # Test binary, built with `go test -c`
 *.test
@@ -14,5 +16,8 @@
 # Dependency directories (remove the comment below to include it)
 vendor/
 
-#Ignore configs
+# Ignore configs
 *.toml
+
+# Ignore vscode
+.vscode

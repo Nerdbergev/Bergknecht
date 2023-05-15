@@ -1,0 +1,12 @@
+[Unit]
+Description="Matrix Bot"
+
+[Service]
+User=root
+Group=root
+WorkingDirectory=/opt/bergknecht
+ExecStart=/opt/bergknecht/bergknecht -c /etc/bergknecht/nb-config.toml
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

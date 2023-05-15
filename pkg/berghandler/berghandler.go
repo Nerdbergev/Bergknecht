@@ -30,12 +30,14 @@ type BergEventHandler interface {
 	Prime(he HandlerEssentials) error
 }
 
-type BergEventHandleFunction func(he HandlerEssentials, evt *event.Event, words []string) bool
+type BergEventHandleFunction func(he HandlerEssentials, evt *event.Event, words []string, neededVariables, optionalVariables int) bool
 
 type SubHandlerSet struct {
-	F BergEventHandleFunction
-	H string
-	U string
+	F  BergEventHandleFunction //Function
+	H  string                  //Helptext
+	U  string                  //USagetext
+	NV int                     //Needed Variable Count
+	OV int                     //Optional Variable Count
 }
 
 type SubHandlers map[string]SubHandlerSet
@@ -47,6 +49,14 @@ func (s *SubHandlers) getAvailableCommands() string {
 		result += (k + " ")
 	}
 	return result
+}
+
+func formatUsage(set SubHandlerSet, cmd string, help bool) string {
+
+	if help {
+		return set.H + "\nUsage: !" + cmd + " " + set.U
+	}
+	return "\nUsage: !" + cmd + " " + set.U
 }
 
 func (s *SubHandlers) Handle(command string, handlerName string, he HandlerEssentials, evt *event.Event) bool {
@@ -70,7 +80,7 @@ func (s *SubHandlers) Handle(command string, handlerName string, he HandlerEssen
 			set := ss[newwords[0]]
 			f := set.F
 			if f != nil {
-				return SendMessage(he, evt, handlerName, set.H+"\nUsage: !"+command+" "+set.U)
+				return SendMessage(he, evt, handlerName, formatUsage(set, command, true))
 			}
 		}
 		set := ss[cmd]
@@ -78,7 +88,10 @@ func (s *SubHandlers) Handle(command string, handlerName string, he HandlerEssen
 		if f == nil {
 			return SendMessage(he, evt, handlerName, fmt.Sprintf(unkownCommand, CommandPrefix+command))
 		}
-		return f(he, evt, newwords)
+		if len(newwords) < set.NV {
+			return SendMessage(he, evt, handlerName, "Too Few required variables. "+formatUsage(set, command, false))
+		}
+		return f(he, evt, newwords, set.NV, set.OV)
 	}
 	return false
 }
@@ -135,7 +148,7 @@ func SplitAnswer(words []string, RequiredCount, OptionalCount int, vars ...*stri
 		return errors.New("variable Count is smaller than total word count")
 	}
 	if len(words) < RequiredCount {
-		return errors.New("too less required Variables")
+		return errors.New("too few required Variables")
 	}
 	end := len(words)
 	if len(vars) < len(words) {

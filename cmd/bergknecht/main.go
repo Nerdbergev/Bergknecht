@@ -11,7 +11,7 @@ import (
 var confpath string
 
 func init() {
-	flag.StringVar(&confpath, "Config Path", "config.toml", "Path to config file")
+	flag.StringVar(&confpath, "c", "config.toml", "Path to config file")
 }
 
 func main() {

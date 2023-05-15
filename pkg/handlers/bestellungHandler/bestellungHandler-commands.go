@@ -29,20 +29,20 @@ type BestellungHandler struct {
 
 func (h *BestellungHandler) Prime(he berghandler.HandlerEssentials) error {
 	h.subHandlers = make(map[string]berghandler.SubHandlerSet)
-	h.subHandlers["new"] = berghandler.SubHandlerSet{F: h.newOrder, H: "Erstellt eine Neue Bestellung.", U: "new $Lieferdienst"}
-	h.subHandlers["add"] = berghandler.SubHandlerSet{F: h.addtoOrder, H: "Hinzufügen eines Items zur Bestellung", U: "add $Bestellung $Artikel [$Version $Extras $Kommentar $Anzahl]"}
-	h.subHandlers["show"] = berghandler.SubHandlerSet{F: h.printOrder, H: "Anzeigen einer Bestellung", U: "show $Bestellung"}
-	h.subHandlers["call-text"] = berghandler.SubHandlerSet{F: h.getCallText, H: "Ausgabe einen Textes zum Anrufen", U: "call-text $Bestellung"}
-	h.subHandlers["print-payment"] = berghandler.SubHandlerSet{F: h.printPayment, H: "Ausgabe der Informationen wer was bezahlen muss", U: "print-payment $Bestellung [$Gezahlt]"}
-	h.subHandlers["get-total"] = berghandler.SubHandlerSet{F: h.getTotal, H: "Ausgabe wie viel die Bestellung kostet plus Trinkgeld Vorschläge", U: "get-total $Bestellung"}
-	h.subHandlers["remove"] = berghandler.SubHandlerSet{F: h.deletePosition, H: "Löscht Position aus der Bestellung", U: "remove $Bestellung $Position"}
-	h.subHandlers["close"] = berghandler.SubHandlerSet{F: h.removeOrder, H: "Schließt Bestellung und Löscht diese", U: "close $Bestellung"}
-	h.subHandlers["add-strichliste"] = berghandler.SubHandlerSet{F: h.addStrichliste, H: "Verknüpft den schreibenden Matrix account mit einem Strichlisten Benutzer", U: "add-strichliste $Benutzername"}
-	h.subHandlers["remove-strichliste"] = berghandler.SubHandlerSet{F: h.removeStrichliste, H: "Löscht Matrix account zu Strichlisten account verknüpfung", U: "remove-strichliste $Benutzername"}
-	h.subHandlers["process-strichliste"] = berghandler.SubHandlerSet{F: h.processStrichliste, H: "Versucht Bestellung via Strichliste abzurechenen", U: "process-strichliste $Bestellung [$Bezahlendendes-Wesen]"}
-	h.subHandlers["menu"] = berghandler.SubHandlerSet{F: h.showMenu, H: "Zeigt Menü eines Lieferdienstes", U: "menu $Lieferdienst"}
-	h.subHandlers["article"] = berghandler.SubHandlerSet{F: h.showArticle, H: "Zeigt Artikelinformationen", U: "article $Lieferdienst $Article"}
-	h.subHandlers["restaurants"] = berghandler.SubHandlerSet{F: h.showRestaurants, H: "Zeigt alle Lieferdienste", U: "restaurants"}
+	h.subHandlers["new"] = berghandler.SubHandlerSet{F: h.newOrder, H: "Erstellt eine Neue Bestellung.", U: "new $Lieferdienst", NV: 1, OV: 0}
+	h.subHandlers["add"] = berghandler.SubHandlerSet{F: h.addtoOrder, H: "Hinzufügen eines Items zur Bestellung", U: "add $Bestellung $Artikel [$Version $Extras $Kommentar $Anzahl]", NV: 2, OV: 4}
+	h.subHandlers["show"] = berghandler.SubHandlerSet{F: h.printOrder, H: "Anzeigen einer Bestellung", U: "show $Bestellung", NV: 1, OV: 0}
+	h.subHandlers["call-text"] = berghandler.SubHandlerSet{F: h.getCallText, H: "Ausgabe einen Textes zum Anrufen", U: "call-text $Bestellung", NV: 1, OV: 0}
+	h.subHandlers["print-payment"] = berghandler.SubHandlerSet{F: h.printPayment, H: "Ausgabe der Informationen wer was bezahlen muss", U: "print-payment $Bestellung [$Gezahlt]", NV: 1, OV: 1}
+	h.subHandlers["get-total"] = berghandler.SubHandlerSet{F: h.getTotal, H: "Ausgabe wie viel die Bestellung kostet plus Trinkgeld Vorschläge", U: "get-total $Bestellung", NV: 1, OV: 0}
+	h.subHandlers["remove"] = berghandler.SubHandlerSet{F: h.deletePosition, H: "Löscht Position aus der Bestellung", U: "remove $Bestellung $Position", NV: 2, OV: 0}
+	h.subHandlers["close"] = berghandler.SubHandlerSet{F: h.removeOrder, H: "Schließt Bestellung und Löscht diese", U: "close $Bestellung", NV: 1, OV: 0}
+	h.subHandlers["add-strichliste"] = berghandler.SubHandlerSet{F: h.addStrichliste, H: "Verknüpft den schreibenden Matrix account mit einem Strichlisten Benutzer", U: "add-strichliste $Benutzername", NV: 1, OV: 0}
+	h.subHandlers["remove-strichliste"] = berghandler.SubHandlerSet{F: h.removeStrichliste, H: "Löscht Matrix account zu Strichlisten account verknüpfung", U: "remove-strichliste", NV: 0, OV: 0}
+	h.subHandlers["process-strichliste"] = berghandler.SubHandlerSet{F: h.processStrichliste, H: "Versucht Bestellung via Strichliste abzurechenen", U: "process-strichliste $Bestellung [$Bezahlendendes-Wesen]", NV: 1, OV: 1}
+	h.subHandlers["menu"] = berghandler.SubHandlerSet{F: h.showMenu, H: "Zeigt Menü eines Lieferdienstes", U: "menu $Lieferdienst", NV: 1, OV: 0}
+	h.subHandlers["article"] = berghandler.SubHandlerSet{F: h.showArticle, H: "Zeigt Artikelinformationen", U: "article $Lieferdienst $Article", NV: 2, OV: 0}
+	h.subHandlers["restaurants"] = berghandler.SubHandlerSet{F: h.showRestaurants, H: "Zeigt alle Lieferdienste", U: "restaurants", NV: 0, OV: 0}
 
 	return he.Storage.DecodeFile(handlerName, "lieferdienste.toml", storage.TOML, true, h)
 }
@@ -72,9 +72,9 @@ func (h *BestellungHandler) searchLieferdienst(ld string) (bool, LieferDienst) {
 	return found, res
 }
 
-func (h *BestellungHandler) newOrder(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+func (h *BestellungHandler) newOrder(he berghandler.HandlerEssentials, evt *event.Event, words []string, neededVariables, optionalVariables int) bool {
 	var ld string
-	err := berghandler.SplitAnswer(words, 1, 0, &ld)
+	err := berghandler.SplitAnswer(words, neededVariables, optionalVariables, &ld)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
 	}
@@ -136,9 +136,9 @@ func getExtrasTotal(zusätze []Zusatz) float64 {
 	return result
 }
 
-func (h *BestellungHandler) addtoOrder(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+func (h *BestellungHandler) addtoOrder(he berghandler.HandlerEssentials, evt *event.Event, words []string, neededVariables, optionalVariables int) bool {
 	var order, artikel, version, extras, kommentar, anzahl string
-	err := berghandler.SplitAnswer(words, 2, 4, &order, &artikel, &version, &extras, &kommentar, &anzahl)
+	err := berghandler.SplitAnswer(words, neededVariables, optionalVariables, &order, &artikel, &version, &extras, &kommentar, &anzahl)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
 	}
@@ -218,9 +218,9 @@ func (h *BestellungHandler) loadOrder(he berghandler.HandlerEssentials, order st
 	return be, nil
 }
 
-func (h *BestellungHandler) printOrder(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+func (h *BestellungHandler) printOrder(he berghandler.HandlerEssentials, evt *event.Event, words []string, neededVariables, optionalVariables int) bool {
 	var order string
-	err := berghandler.SplitAnswer(words, 1, 0, &order)
+	err := berghandler.SplitAnswer(words, neededVariables, optionalVariables, &order)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
 	}
@@ -232,9 +232,9 @@ func (h *BestellungHandler) printOrder(he berghandler.HandlerEssentials, evt *ev
 	return berghandler.SendFormattedMessage(he, evt, handlerName, msg)
 }
 
-func (h *BestellungHandler) getCallText(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+func (h *BestellungHandler) getCallText(he berghandler.HandlerEssentials, evt *event.Event, words []string, neededVariables, optionalVariables int) bool {
 	var order string
-	err := berghandler.SplitAnswer(words, 1, 0, &order)
+	err := berghandler.SplitAnswer(words, neededVariables, optionalVariables, &order)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
 	}
@@ -246,9 +246,9 @@ func (h *BestellungHandler) getCallText(he berghandler.HandlerEssentials, evt *e
 	return berghandler.SendMessage(he, evt, handlerName, msg)
 }
 
-func (h *BestellungHandler) getTotal(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+func (h *BestellungHandler) getTotal(he berghandler.HandlerEssentials, evt *event.Event, words []string, neededVariables, optionalVariables int) bool {
 	var order string
-	err := berghandler.SplitAnswer(words, 1, 0, &order)
+	err := berghandler.SplitAnswer(words, neededVariables, optionalVariables, &order)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
 	}
@@ -260,9 +260,9 @@ func (h *BestellungHandler) getTotal(he berghandler.HandlerEssentials, evt *even
 	return berghandler.SendFormattedMessage(he, evt, handlerName, msg)
 }
 
-func (h *BestellungHandler) printPayment(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+func (h *BestellungHandler) printPayment(he berghandler.HandlerEssentials, evt *event.Event, words []string, neededVariables, optionalVariables int) bool {
 	var order, payeds string
-	err := berghandler.SplitAnswer(words, 1, 1, &order, &payeds)
+	err := berghandler.SplitAnswer(words, neededVariables, optionalVariables, &order, &payeds)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
 	}
@@ -291,9 +291,9 @@ func (h *BestellungHandler) printPayment(he berghandler.HandlerEssentials, evt *
 	return berghandler.SendFormattedMessage(he, evt, handlerName, msg)
 }
 
-func (h *BestellungHandler) deletePosition(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+func (h *BestellungHandler) deletePosition(he berghandler.HandlerEssentials, evt *event.Event, words []string, neededVariables, optionalVariables int) bool {
 	var order, posis string
-	err := berghandler.SplitAnswer(words, 2, 0, &order, &posis)
+	err := berghandler.SplitAnswer(words, neededVariables, optionalVariables, &order, &posis)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
 	}
@@ -322,9 +322,9 @@ func (h *BestellungHandler) deletePosition(he berghandler.HandlerEssentials, evt
 	return berghandler.SendMessage(he, evt, handlerName, "Artikel entfernt")
 }
 
-func (h *BestellungHandler) removeOrder(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+func (h *BestellungHandler) removeOrder(he berghandler.HandlerEssentials, evt *event.Event, words []string, neededVariables, optionalVariables int) bool {
 	var order string
-	err := berghandler.SplitAnswer(words, 1, 0, &order)
+	err := berghandler.SplitAnswer(words, neededVariables, optionalVariables, &order)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
 	}
@@ -408,9 +408,9 @@ func getStrichlistenID(address, name string) (int, error) {
 	return siUser.ID, nil
 }
 
-func (h *BestellungHandler) addStrichliste(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+func (h *BestellungHandler) addStrichliste(he berghandler.HandlerEssentials, evt *event.Event, words []string, neededVariables, optionalVariables int) bool {
 	var username string
-	err := berghandler.SplitAnswer(words, 1, 0, &username)
+	err := berghandler.SplitAnswer(words, neededVariables, optionalVariables, &username)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
 	}
@@ -434,7 +434,7 @@ func (h *BestellungHandler) addStrichliste(he berghandler.HandlerEssentials, evt
 	return berghandler.SendMessage(he, evt, handlerName, "Link hinzugefügt")
 }
 
-func (h *BestellungHandler) removeStrichliste(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+func (h *BestellungHandler) removeStrichliste(he berghandler.HandlerEssentials, evt *event.Event, words []string, neededVariables, optionalVariables int) bool {
 	var si strichlistenInfo
 	err := he.Storage.DecodeFile(handlerName, "strichliste.toml", storage.TOML, true, &si)
 	if err != nil {
@@ -501,10 +501,10 @@ func (h *BestellungHandler) doPayment(payer int, p paymentInfo, comment string, 
 	writePaymentResult(wg, ses, p.Payee, fmt.Sprintf("Transaction mit der ID %v angelegt", to.ID))
 }
 
-func (h *BestellungHandler) processStrichliste(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+func (h *BestellungHandler) processStrichliste(he berghandler.HandlerEssentials, evt *event.Event, words []string, neededVariables, optionalVariables int) bool {
 	var order string
 	var payer string
-	err := berghandler.SplitAnswer(words, 1, 1, &order, &payer)
+	err := berghandler.SplitAnswer(words, neededVariables, optionalVariables, &order, &payer)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
 	}
@@ -550,9 +550,9 @@ func (h *BestellungHandler) processStrichliste(he berghandler.HandlerEssentials,
 	return berghandler.SendFormattedMessage(he, evt, handlerName, t.RenderHTML())
 }
 
-func (h *BestellungHandler) showMenu(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+func (h *BestellungHandler) showMenu(he berghandler.HandlerEssentials, evt *event.Event, words []string, neededVariables, optionalVariables int) bool {
 	var ld string
-	err := berghandler.SplitAnswer(words, 1, 0, &ld)
+	err := berghandler.SplitAnswer(words, neededVariables, optionalVariables, &ld)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
 	}
@@ -563,9 +563,9 @@ func (h *BestellungHandler) showMenu(he berghandler.HandlerEssentials, evt *even
 	return berghandler.SendFormattedMessage(he, evt, handlerName, l.prettyFormat())
 }
 
-func (h *BestellungHandler) showArticle(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+func (h *BestellungHandler) showArticle(he berghandler.HandlerEssentials, evt *event.Event, words []string, neededVariables, optionalVariables int) bool {
 	var ld, artikel string
-	err := berghandler.SplitAnswer(words, 2, 0, &ld, &artikel)
+	err := berghandler.SplitAnswer(words, neededVariables, optionalVariables, &ld, &artikel)
 	if err != nil {
 		return berghandler.SendMessage(he, evt, handlerName, fmt.Sprintf(berghandler.WrongArguments, berghandler.CommandPrefix+command)+" "+err.Error())
 	}
@@ -601,6 +601,6 @@ func (h *BestellungHandler) prettyFormatRestaurants() string {
 	return t.RenderHTML()
 }
 
-func (h *BestellungHandler) showRestaurants(he berghandler.HandlerEssentials, evt *event.Event, words []string) bool {
+func (h *BestellungHandler) showRestaurants(he berghandler.HandlerEssentials, evt *event.Event, words []string, neededVariables, optionalVariables int) bool {
 	return berghandler.SendFormattedMessage(he, evt, handlerName, h.prettyFormatRestaurants())
 }
